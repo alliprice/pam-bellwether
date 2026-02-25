@@ -18,11 +18,40 @@ unsafe extern "C" fn lock_cleanup(
     flock::release_lock(fd);
 }
 
-/// Send a PAM_TEXT_INFO message to the user via pam_info().
+/// Send a PAM_TEXT_INFO message to the user via the PAM conversation function.
 fn send_info(pamh: *mut ffi::PamHandle, message: &str) {
-    let fmt = std::ffi::CString::new("%s").unwrap();
-    if let Ok(msg) = std::ffi::CString::new(message) {
-        unsafe { ffi::pam_info(pamh, fmt.as_ptr(), msg.as_ptr()) };
+    let msg_cstr = match std::ffi::CString::new(message) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let msg = ffi::PamMessage {
+        msg_style: ffi::PAM_TEXT_INFO,
+        msg: msg_cstr.as_ptr(),
+    };
+    let msg_ptr: *const ffi::PamMessage = &msg;
+
+    let mut conv_ptr: *const c_void = std::ptr::null();
+    let rc = unsafe { ffi::pam_get_item(pamh, ffi::PAM_CONV, &mut conv_ptr) };
+    if rc != PAM_SUCCESS || conv_ptr.is_null() {
+        return;
+    }
+
+    let conv = unsafe { &*(conv_ptr as *const ffi::PamConv) };
+    let conv_fn = match conv.conv {
+        Some(f) => f,
+        None => return,
+    };
+
+    let mut resp: *mut ffi::PamResponse = std::ptr::null_mut();
+    unsafe {
+        conv_fn(1, &msg_ptr, &mut resp, conv.appdata_ptr);
+        if !resp.is_null() {
+            if !(*resp).resp.is_null() {
+                libc::free((*resp).resp as *mut c_void);
+            }
+            libc::free(resp as *mut c_void);
+        }
     }
 }
 

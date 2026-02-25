@@ -37,7 +37,35 @@ extern "C" {
         data: *mut *const c_void,
     ) -> c_int;
 
-    pub fn pam_info(pamh: *mut PamHandle, fmt: *const c_char, ...) -> c_int;
+}
+
+// PAM conversation types
+pub const PAM_CONV: c_int = 5; // PAM_ITEM type for conversation struct
+pub const PAM_TEXT_INFO: c_int = 4;
+
+#[repr(C)]
+pub struct PamMessage {
+    pub msg_style: c_int,
+    pub msg: *const c_char,
+}
+
+#[repr(C)]
+pub struct PamResponse {
+    pub resp: *mut c_char,
+    pub resp_retcode: c_int,
+}
+
+pub type PamConvFn = unsafe extern "C" fn(
+    num_msg: c_int,
+    msg: *const *const PamMessage,
+    resp: *mut *mut PamResponse,
+    appdata_ptr: *mut c_void,
+) -> c_int;
+
+#[repr(C)]
+pub struct PamConv {
+    pub conv: Option<PamConvFn>,
+    pub appdata_ptr: *mut c_void,
 }
 
 /// Safe wrapper to get a PAM item as a &str
