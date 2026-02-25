@@ -61,6 +61,7 @@ provision:
       cat > "${GA_DIR}/.google_authenticator" <<'GA_EOF'
 JBSWY3DPEHPK3PXP
 " TOTP_AUTH
+" DISALLOW_REUSE
 " RATE_LIMIT 0 0
 GA_EOF
       chown testuser:testuser "${GA_DIR}/.google_authenticator"
