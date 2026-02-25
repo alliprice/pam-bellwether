@@ -2,7 +2,9 @@
 set -euo pipefail
 
 # Integration tests for pam_preauth_gate.so and pam_preauth_stamp.so
-# Must run as root inside a Rocky 9 VM (e.g., via `vagrant ssh` then `sudo bash /vagrant/tests/integration/pam_test.sh`)
+#
+# Usage (Lima):  limactl shell pam-preauth -- sudo bash /Users/alliprice/code/pam-preauth/tests/integration/pam_test.sh
+# Usage (Vagrant): vagrant ssh -c 'sudo bash /vagrant/tests/integration/pam_test.sh'
 
 # ---------------------------------------------------------------------------
 # Colored output helpers
@@ -51,14 +53,14 @@ assert_contains() {
 }
 
 # ---------------------------------------------------------------------------
-# SSH helper
+# SSH helper — uses password auth via sshpass so sshd runs the PAM auth stack.
+# Pubkey auth bypasses PAM auth entirely, which means our modules never run.
 # ---------------------------------------------------------------------------
 ssh_to_localhost() {
-    ssh \
+    sshpass -p testpass ssh \
         -o StrictHostKeyChecking=no \
-        -o BatchMode=yes \
+        -o PubkeyAuthentication=no \
         -o ConnectTimeout=10 \
-        -i /root/.ssh/test_key \
         testuser@127.0.0.1 \
         true
 }
@@ -73,6 +75,16 @@ cleanup() {
     if [[ -f /etc/pam.d/sshd.bak ]]; then
         cp /etc/pam.d/sshd.bak /etc/pam.d/sshd
         echo "Restored /etc/pam.d/sshd"
+    fi
+
+    if [[ -f /etc/ssh/sshd_config.bak ]]; then
+        cp /etc/ssh/sshd_config.bak /etc/ssh/sshd_config
+        echo "Restored /etc/ssh/sshd_config"
+    fi
+    if [[ -d /etc/ssh/sshd_config.d.bak ]]; then
+        rm -rf /etc/ssh/sshd_config.d
+        mv /etc/ssh/sshd_config.d.bak /etc/ssh/sshd_config.d
+        echo "Restored /etc/ssh/sshd_config.d/"
     fi
 
     systemctl restart sshd 2>/dev/null || true
@@ -118,12 +130,25 @@ if ! id testuser &>/dev/null; then
     exit 1
 fi
 
-# Source cargo env so we can run cargo build
-# shellcheck disable=SC1091
-if [[ -f /home/vagrant/.cargo/env ]]; then
-    source /home/vagrant/.cargo/env
-else
-    echo "WARNING: /home/vagrant/.cargo/env not found; assuming cargo is already in PATH"
+# Add cargo/rustup to PATH. Under sudo, HOME is /root but Rust was installed
+# for the unprivileged user. Find the actual installation and set all env vars.
+# shellcheck disable=SC2044
+if ! command -v cargo &>/dev/null; then
+    for cargo_dir in $(find /home -maxdepth 3 -type d -name .cargo 2>/dev/null) /root/.cargo; do
+        if [[ -x "$cargo_dir/bin/cargo" ]]; then
+            export PATH="$cargo_dir/bin:$PATH"
+            export CARGO_HOME="$cargo_dir"
+            # rustup home is sibling to .cargo
+            user_home="$(dirname "$cargo_dir")"
+            export RUSTUP_HOME="$user_home/.rustup"
+            echo "Using Rust from: $cargo_dir (RUSTUP_HOME=$RUSTUP_HOME)"
+            break
+        fi
+    done
+fi
+if ! command -v cargo &>/dev/null; then
+    echo "ERROR: cargo not found. Install Rust first." >&2
+    exit 1
 fi
 
 # ---------------------------------------------------------------------------
@@ -131,8 +156,12 @@ fi
 # ---------------------------------------------------------------------------
 echo "--- Setup ---"
 
-echo "Building project..."
-cd /vagrant && cargo build --release 2>&1
+# Find the project root — works for both Lima (macOS mount) and Vagrant (/vagrant)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+echo "Building project (${PROJECT_ROOT})..."
+cd "$PROJECT_ROOT" && cargo build --release 2>&1
 echo "Build complete."
 
 echo "Installing .so files..."
@@ -145,6 +174,16 @@ install -d -m 0700 -o root -g root /run/pam-preauth
 echo "Backing up /etc/pam.d/sshd..."
 cp /etc/pam.d/sshd /etc/pam.d/sshd.bak
 
+# Install sshpass for password-based SSH (needed to trigger PAM auth stack)
+if ! command -v sshpass &>/dev/null; then
+    echo "Installing sshpass..."
+    dnf install -y -q sshpass 2>&1 || epel_needed=true
+    if [[ "${epel_needed:-}" == "true" ]] || ! command -v sshpass &>/dev/null; then
+        dnf install -y -q epel-release 2>&1
+        dnf install -y -q sshpass 2>&1
+    fi
+fi
+
 echo "Writing test PAM config..."
 cat > /etc/pam.d/sshd <<'PAM_EOF'
 # Test PAM stack — pam_permit.so stands in for pam_duo.so
@@ -153,26 +192,29 @@ auth  [success=1 ignore=ignore default=ignore]  pam_preauth_gate.so timeout=5 de
 auth  required                                   pam_permit.so
 auth  required                                   pam_preauth_stamp.so debug
 account required pam_permit.so
+password required pam_permit.so
 session required pam_permit.so
 PAM_EOF
+
+echo "Configuring sshd for password auth..."
+# Back up sshd_config and drop-in configs, then force password auth.
+# Cloud-init and distro drop-ins in sshd_config.d/ often disable password auth.
+cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
+if [[ -d /etc/ssh/sshd_config.d ]]; then
+    cp -a /etc/ssh/sshd_config.d /etc/ssh/sshd_config.d.bak
+    # Override password auth in all drop-in configs
+    for f in /etc/ssh/sshd_config.d/*.conf; do
+        [[ -f "$f" ]] && sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' "$f"
+    done
+fi
+# Also set in main config
+sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+grep -q '^PasswordAuthentication' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
 
 echo "Restarting sshd..."
 systemctl restart sshd
 sleep 1  # give sshd a moment to fully restart
-
-echo "Setting up SSH key for root→testuser..."
-if [[ ! -f /root/.ssh/test_key ]]; then
-    ssh-keygen -t ed25519 -N "" -f /root/.ssh/test_key -C "pam_preauth_test"
-fi
-chmod 700 /root/.ssh
-
-TESTUSER_HOME=$(getent passwd testuser | cut -d: -f6)
-install -d -m 0700 -o testuser -g testuser "${TESTUSER_HOME}/.ssh"
-cat /root/.ssh/test_key.pub >> "${TESTUSER_HOME}/.ssh/authorized_keys"
-# Deduplicate in case we're re-running
-sort -u "${TESTUSER_HOME}/.ssh/authorized_keys" -o "${TESTUSER_HOME}/.ssh/authorized_keys"
-chmod 600 "${TESTUSER_HOME}/.ssh/authorized_keys"
-chown testuser:testuser "${TESTUSER_HOME}/.ssh/authorized_keys"
 
 echo "Setup complete."
 echo ""

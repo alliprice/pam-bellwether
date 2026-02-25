@@ -1,0 +1,79 @@
+# Lima config for pam-preauth integration testing on Rocky 9
+#
+# Usage:
+#   limactl create --name=pam-preauth lima-rocky9.yaml
+#   limactl start pam-preauth
+#   limactl shell pam-preauth
+#
+# Inside the VM:
+#   cd /Users/alliprice/code/pam-preauth
+#   cargo build --release
+#   sudo bash tests/integration/pam_test.sh
+
+# Use Rocky 9 aarch64 cloud image
+images:
+  - location: "https://dl.rockylinux.org/pub/rocky/9/images/aarch64/Rocky-9-GenericCloud-Base.latest.aarch64.qcow2"
+    arch: "aarch64"
+  - location: "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
+    arch: "x86_64"
+
+cpus: 2
+memory: "2GiB"
+disk: "20GiB"
+
+# Mount the project directory read-write
+mounts:
+  - location: "/Users/alliprice/code/pam-preauth"
+    writable: true
+
+# Provisioning scripts
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+
+      # Install build dependencies
+      dnf install -y \
+        pam-devel \
+        openssh-server \
+        gcc \
+        make \
+        pkg-config
+
+      # Enable sshd
+      systemctl enable --now sshd
+
+      # Create test user
+      if ! id testuser &>/dev/null; then
+        useradd -m -s /bin/bash testuser
+      fi
+      echo "testuser:testpass" | chpasswd
+
+      # Create runtime directory for pam-preauth
+      install -d -m 0700 -o root -g root /run/pam-preauth
+
+      # tmpfiles.d entry so it persists across reboots
+      echo 'd /run/pam-preauth 0700 root root -' > /etc/tmpfiles.d/pam-preauth.conf
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+
+      # Install Rust toolchain
+      if command -v rustup &>/dev/null; then
+        rustup update stable
+      else
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+          | sh -s -- -y --default-toolchain stable
+      fi
+
+      source "$HOME/.cargo/env"
+      echo "Rust: $(rustc --version)"
+      echo "Cargo: $(cargo --version)"
+
+      # Ensure cargo is on PATH for future sessions
+      if ! grep -q 'cargo/env' "$HOME/.bashrc" 2>/dev/null; then
+        echo 'source "$HOME/.cargo/env"' >> "$HOME/.bashrc"
+      fi
