@@ -1,31 +1,53 @@
 # Vagrantfile for pam-preauth integration testing
 #
 # Usage:
-#   vagrant up          # provision VM
-#   vagrant ssh         # shell into VM
-#   vagrant provision   # re-run provisioning (idempotent)
-#   vagrant destroy -f  # tear down
+#   vagrant up --provider=qemu    # first time (arm64 macOS)
+#   vagrant up                    # subsequent (remembers provider)
+#   vagrant ssh                   # shell into VM
+#   vagrant provision             # re-run provisioning (idempotent)
+#   vagrant destroy -f            # tear down
 #
-# Inside the VM, the project is mounted at /vagrant. Build with:
+# Inside the VM, the project is at /vagrant. Build with:
 #   cd /vagrant && cargo build --release
+#
+# Run integration tests:
+#   sudo bash /vagrant/tests/integration/pam_test.sh
+#
+# Prerequisites (macOS arm64):
+#   brew install qemu
+#   brew install hashicorp/tap/hashicorp-vagrant
+#   vagrant plugin install vagrant-qemu
 
 Vagrant.configure("2") do |config|
-  # generic/rocky9 is available for both VirtualBox and libvirt providers
   config.vm.box = "generic/rocky9"
 
+  # --- Provider: QEMU (arm64 macOS via vagrant-qemu plugin) ---
+  config.vm.provider "qemu" do |qe|
+    qe.arch = "aarch64"
+    qe.machine = "virt,accel=hvf,highmem=on"
+    qe.cpu = "host"
+    qe.smp = "2"
+    qe.memory = "2048"
+    qe.net_device = "virtio-net-pci"
+  end
+
+  # --- Provider: VirtualBox (x86_64) ---
   config.vm.provider "virtualbox" do |vb|
     vb.name   = "pam-preauth-test"
     vb.cpus   = 2
     vb.memory = 2048
   end
 
+  # --- Provider: libvirt ---
   config.vm.provider "libvirt" do |lv|
     lv.cpus  = 2
     lv.memory = 2048
   end
 
-  # The project directory is synced into /vagrant by default.
-  # Vagrant mounts it automatically — no explicit synced_folder needed.
+  # vagrant-qemu uses SMB or rsync for synced folders.
+  # Explicitly use rsync so it works without extra deps.
+  config.vm.synced_folder ".", "/vagrant", type: "rsync",
+    rsync__exclude: [".git/", "target/"]
 
   # --------------------------------------------------------------------
   # Step 1: System packages (privileged)
