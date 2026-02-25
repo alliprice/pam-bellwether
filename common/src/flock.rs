@@ -33,3 +33,111 @@ pub fn unlock(fd: RawFd) {
         libc::flock(fd, LOCK_UN);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Barrier};
+    use std::sync::mpsc;
+
+    #[test]
+    fn test_acquire_creates_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lock_path = dir.path().join("test.lock");
+
+        let fd = acquire_lock(&lock_path).expect("acquire_lock should succeed");
+        assert!(fd >= 0, "fd should be non-negative");
+        assert!(lock_path.exists(), "lock file should exist after acquire");
+
+        release_lock(fd);
+    }
+
+    #[test]
+    fn test_acquire_nonexistent_parent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lock_path = dir.path().join("nonexistent_subdir").join("test.lock");
+
+        let result = acquire_lock(&lock_path);
+        assert!(result.is_none(), "acquire_lock should return None for non-existent parent dir");
+    }
+
+    #[test]
+    fn test_release_closes_fd() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lock_path = dir.path().join("test.lock");
+
+        let fd = acquire_lock(&lock_path).expect("acquire_lock should succeed");
+        release_lock(fd);
+
+        // After release_lock, the fd should be closed (EBADF)
+        let rc = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+        assert_eq!(rc, -1, "flock on closed fd should return -1 (EBADF)");
+    }
+
+    #[test]
+    fn test_unlock_keeps_fd_open() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lock_path = dir.path().join("test.lock");
+
+        let fd = acquire_lock(&lock_path).expect("acquire_lock should succeed");
+        unlock(fd);
+
+        // After unlock (no close), the fd should still be valid
+        // Re-acquiring the lock on the same fd should succeed since the lock was released
+        let rc = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+        assert_eq!(rc, 0, "flock on still-open fd should succeed after unlock");
+
+        // Clean up manually
+        unsafe { libc::close(fd) };
+    }
+
+    #[test]
+    fn test_concurrent_lock_contention() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let lock_path: PathBuf = dir.path().join("contention.lock");
+
+        let barrier = Arc::new(Barrier::new(2));
+        let (tx, rx) = mpsc::channel::<&'static str>();
+
+        let path1 = lock_path.clone();
+        let barrier1 = Arc::clone(&barrier);
+        let tx1 = tx.clone();
+
+        let thread1 = std::thread::spawn(move || {
+            let fd = acquire_lock(&path1).expect("thread1: acquire_lock should succeed");
+            tx1.send("acquired").expect("thread1: send acquired");
+            // Wait for thread2 to be ready to contend
+            barrier1.wait();
+            // Hold the lock briefly so thread2 actually blocks
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            release_lock(fd);
+        });
+
+        let path2 = lock_path.clone();
+        let barrier2 = Arc::clone(&barrier);
+        let tx2 = tx;
+
+        let thread2 = std::thread::spawn(move || {
+            // Wait until thread1 has acquired the lock
+            // The "acquired" message signals thread1 holds the lock
+            // We don't receive here — main thread does — so just sync via barrier
+            barrier2.wait();
+            // thread1 holds the lock; this will block until thread1 releases
+            let fd = acquire_lock(&path2).expect("thread2: acquire_lock should succeed");
+            tx2.send("acquired").expect("thread2: send acquired");
+            release_lock(fd);
+        });
+
+        // Wait for thread1 to signal it holds the lock
+        let msg1 = rx.recv().expect("recv thread1 acquired");
+        assert_eq!(msg1, "acquired");
+
+        thread1.join().expect("thread1 join");
+        thread2.join().expect("thread2 join");
+
+        // thread2 should also have successfully acquired and sent its message
+        let msg2 = rx.recv().expect("recv thread2 acquired");
+        assert_eq!(msg2, "acquired");
+    }
+}

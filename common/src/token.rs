@@ -75,3 +75,127 @@ pub fn touch_token(path: &Path) -> bool {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+    use std::time::Duration;
+
+    // --- touch_token tests ---
+
+    #[test]
+    fn test_touch_creates_file() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let token_path = dir.path().join("token.file");
+        assert!(!token_path.exists(), "file should not exist yet");
+        let result = touch_token(&token_path);
+        assert!(result, "touch_token should return true");
+        assert!(token_path.exists(), "file should exist after touch_token");
+    }
+
+    #[test]
+    fn test_touch_updates_mtime() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let token_path = dir.path().join("token.file");
+
+        assert!(touch_token(&token_path), "first touch failed");
+        let mtime_before = std::fs::metadata(&token_path)
+            .expect("metadata failed")
+            .modified()
+            .expect("modified() failed");
+
+        thread::sleep(Duration::from_secs(1));
+
+        assert!(touch_token(&token_path), "second touch failed");
+        let mtime_after = std::fs::metadata(&token_path)
+            .expect("metadata failed")
+            .modified()
+            .expect("modified() failed");
+
+        assert!(
+            mtime_after > mtime_before,
+            "mtime should have increased after second touch"
+        );
+    }
+
+    #[test]
+    fn test_touch_nonexistent_parent() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let token_path = dir.path().join("nonexistent_subdir").join("token.file");
+        let result = touch_token(&token_path);
+        assert!(!result, "touch_token should return false for missing parent dir");
+    }
+
+    // --- token_is_fresh tests ---
+
+    #[test]
+    fn test_fresh_missing_file() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let token_path = dir.path().join("does_not_exist.token");
+        let result = token_is_fresh(&token_path, Duration::from_secs(60));
+        assert!(!result, "missing file should not be fresh");
+    }
+
+    #[test]
+    fn test_fresh_just_touched() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let token_path = dir.path().join("token.file");
+        assert!(touch_token(&token_path), "touch failed");
+        let result = token_is_fresh(&token_path, Duration::from_secs(60));
+        assert!(result, "just-touched file should be fresh with 60s TTL");
+    }
+
+    #[test]
+    fn test_fresh_expired() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let token_path = dir.path().join("token.file");
+        assert!(touch_token(&token_path), "touch failed");
+        thread::sleep(Duration::from_secs(2));
+        let result = token_is_fresh(&token_path, Duration::from_secs(1));
+        assert!(!result, "file touched 2s ago should not be fresh with 1s TTL");
+    }
+
+    #[test]
+    fn test_fresh_future_mtime() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let token_path = dir.path().join("token.file");
+        assert!(touch_token(&token_path), "initial touch failed");
+
+        // Set mtime to 1 hour in the future using platform-specific libc calls.
+        let c_path = std::ffi::CString::new(token_path.to_str().unwrap()).unwrap();
+        let future_sec = unsafe {
+            let mut now: libc::timespec = std::mem::zeroed();
+            libc::clock_gettime(libc::CLOCK_REALTIME, &mut now);
+            now.tv_sec + 3600
+        };
+
+        #[cfg(target_os = "macos")]
+        unsafe {
+            let times = [
+                libc::timeval { tv_sec: future_sec, tv_usec: 0 },
+                libc::timeval { tv_sec: future_sec, tv_usec: 0 },
+            ];
+            let ret = libc::utimes(c_path.as_ptr(), times.as_ptr());
+            assert_eq!(ret, 0, "utimes failed to set future mtime");
+        }
+
+        #[cfg(target_os = "linux")]
+        unsafe {
+            let times = [
+                libc::timespec { tv_sec: future_sec, tv_nsec: 0 },
+                libc::timespec { tv_sec: future_sec, tv_nsec: 0 },
+            ];
+            let ret = libc::utimensat(
+                libc::AT_FDCWD,
+                c_path.as_ptr(),
+                times.as_ptr(),
+                0,
+            );
+            assert_eq!(ret, 0, "utimensat failed to set future mtime");
+        }
+
+        let result = token_is_fresh(&token_path, Duration::from_secs(60));
+        assert!(!result, "file with future mtime should not be fresh");
+    }
+}

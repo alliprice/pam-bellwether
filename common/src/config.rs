@@ -42,3 +42,63 @@ pub fn parse_ttl(args: &[&str]) -> Duration {
 pub fn has_debug(args: &[&str]) -> bool {
     args.iter().any(|&a| a == "debug")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ttl_default_on_empty_args() {
+        assert_eq!(parse_ttl(&[]), DEFAULT_TTL);
+    }
+
+    #[test]
+    fn test_parse_ttl_explicit_value() {
+        assert_eq!(parse_ttl(&["timeout=120"]), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn test_parse_ttl_zero_returns_default() {
+        assert_eq!(parse_ttl(&["timeout=0"]), DEFAULT_TTL);
+    }
+
+    #[test]
+    fn test_parse_ttl_non_numeric_returns_default() {
+        assert_eq!(parse_ttl(&["timeout=abc"]), DEFAULT_TTL);
+    }
+
+    #[test]
+    fn test_parse_ttl_empty_value_returns_default() {
+        assert_eq!(parse_ttl(&["timeout="]), DEFAULT_TTL);
+    }
+
+    #[test]
+    fn test_parse_ttl_multiple_timeout_args() {
+        assert_eq!(parse_ttl(&["timeout=30", "timeout=90"]), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_parse_ttl_mixed_args() {
+        assert_eq!(parse_ttl(&["debug", "timeout=45", "other"]), Duration::from_secs(45));
+    }
+
+    #[test]
+    fn test_has_debug_empty() {
+        assert_eq!(has_debug(&[]), false);
+    }
+
+    #[test]
+    fn test_has_debug_present() {
+        assert_eq!(has_debug(&["debug"]), true);
+    }
+
+    #[test]
+    fn test_has_debug_prefix_not_matched() {
+        assert_eq!(has_debug(&["debug=foo"]), false);
+    }
+
+    #[test]
+    fn test_has_debug_case_sensitive() {
+        assert_eq!(has_debug(&["Debug"]), false);
+    }
+}
