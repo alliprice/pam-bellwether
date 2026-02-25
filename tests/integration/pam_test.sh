@@ -219,6 +219,7 @@ if [[ -d /etc/ssh/sshd_config.d ]]; then
     for f in /etc/ssh/sshd_config.d/*.conf; do
         [[ -f "$f" ]] && sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' "$f"
         [[ -f "$f" ]] && sed -i 's/^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' "$f"
+        [[ -f "$f" ]] && sed -i 's/^ChallengeResponseAuthentication.*/ChallengeResponseAuthentication yes/' "$f"
     done
 fi
 # Set in main config
