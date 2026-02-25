@@ -58,12 +58,12 @@ provision:
       # Hardcoded secret — reproducible test VM, not a security concern
       TOTP_SECRET="JBSWY3DPEHPK3PXP"
       GA_DIR="/home/testuser"
-      cat > "${GA_DIR}/.google_authenticator" <<'GA_EOF'
-JBSWY3DPEHPK3PXP
-" TOTP_AUTH
-" DISALLOW_REUSE
-" RATE_LIMIT 0 0
-GA_EOF
+      printf '%s\n' \
+        'JBSWY3DPEHPK3PXP' \
+        '" TOTP_AUTH' \
+        '" DISALLOW_REUSE' \
+        '" RATE_LIMIT 0 0' \
+        > "${GA_DIR}/.google_authenticator"
       chown testuser:testuser "${GA_DIR}/.google_authenticator"
       chmod 0400 "${GA_DIR}/.google_authenticator"
 
