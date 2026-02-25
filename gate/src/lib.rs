@@ -18,6 +18,14 @@ unsafe extern "C" fn lock_cleanup(
     flock::release_lock(fd);
 }
 
+/// Send a PAM_TEXT_INFO message to the user via pam_info().
+fn send_info(pamh: *mut ffi::PamHandle, message: &str) {
+    let fmt = std::ffi::CString::new("%s").unwrap();
+    if let Ok(msg) = std::ffi::CString::new(message) {
+        unsafe { ffi::pam_info(pamh, fmt.as_ptr(), msg.as_ptr()) };
+    }
+}
+
 fn gate_inner(
     pamh: *mut PamHandle,
     _flags: c_int,
@@ -34,7 +42,19 @@ fn gate_inner(
     let lock_path = paths::lock_path(user, rhost)?;
     let token_path = paths::token_path(user, rhost)?;
 
-    let fd = flock::acquire_lock(&lock_path)?;
+    let fd = flock::open_lock(&lock_path)?;
+    let immediate = flock::try_lock(fd)?;
+    if !immediate {
+        send_info(pamh, "Waiting for MFA to complete in another session...");
+        pam_log::log_info(&format!(
+            "pam_preauth: gate waiting for flock ({}@{})",
+            user, rhost
+        ));
+        if !flock::block_lock(fd) {
+            unsafe { libc::close(fd) };
+            return None;
+        }
+    }
 
     let rc = unsafe {
         ffi::pam_set_data(

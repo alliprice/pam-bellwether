@@ -1,4 +1,4 @@
-use libc::{self, c_uint, LOCK_EX, LOCK_UN, O_CREAT, O_RDWR};
+use libc::{self, c_uint, LOCK_EX, LOCK_NB, LOCK_UN, O_CREAT, O_RDWR};
 use std::ffi::CString;
 use std::os::unix::io::RawFd;
 use std::path::Path;
@@ -17,6 +17,38 @@ pub fn acquire_lock(path: &Path) -> Option<RawFd> {
         return None;
     }
     Some(fd)
+}
+
+/// Open the lock file without acquiring the flock.
+/// Returns the fd on success, None on any error.
+pub fn open_lock(path: &Path) -> Option<RawFd> {
+    let c_path = CString::new(path.to_str()?).ok()?;
+    let fd = unsafe { libc::open(c_path.as_ptr(), O_CREAT | O_RDWR, 0o600 as c_uint) };
+    if fd < 0 {
+        return None;
+    }
+    Some(fd)
+}
+
+/// Try to acquire exclusive lock without blocking.
+/// Returns Some(true) if acquired, Some(false) if contended, None on error.
+pub fn try_lock(fd: RawFd) -> Option<bool> {
+    let rc = unsafe { libc::flock(fd, LOCK_EX | LOCK_NB) };
+    if rc == 0 {
+        Some(true)
+    } else {
+        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+        if errno == libc::EWOULDBLOCK || errno == libc::EAGAIN {
+            Some(false)
+        } else {
+            None
+        }
+    }
+}
+
+/// Block until exclusive lock is acquired. For use after try_lock returns false.
+pub fn block_lock(fd: RawFd) -> bool {
+    unsafe { libc::flock(fd, LOCK_EX) == 0 }
 }
 
 /// Release flock and close the fd. Used by gate cleanup.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Launch 6 simultaneous SSH connections in a tmux grid.
-# Used by VHS demo for the "Ansible moment" act.
+# Launch 6 simultaneous cold SSH connections in a tmux grid.
+# Clears cache first so one connection gets MFA, five queue behind the flock.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/.env"
@@ -10,9 +10,12 @@ source "$SCRIPT_DIR/.env"
 SESSION="pam-demo"
 PANE_COUNT=6
 
-SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o PubkeyAuthentication=no -o PreferredAuthentications=keyboard-interactive \
-    -p $SSH_PORT testuser@127.0.0.1"
+# Clear cache so all connections start cold
+limactl shell pam-preauth -- sudo rm -f /run/pam-preauth/*.token /run/pam-preauth/*.lock
+echo "Clearing MFA cache..."
+sleep 1
+echo "Launching $PANE_COUNT simultaneous connections..."
+sleep 1
 
 # Kill any existing session
 tmux kill-session -t "$SESSION" 2>/dev/null || true
@@ -30,7 +33,7 @@ done
 for i in $(seq 0 $((PANE_COUNT - 1))); do
     pane_num=$((i + 1))
     tmux send-keys -t "${SESSION}:0.${i}" \
-        "$SSH_CMD 'echo \"[pane ${pane_num}] Connected — no MFA\"; sleep 30'" Enter
+        "$SCRIPT_DIR/ssh-attempt.sh --label $pane_num" Enter
 done
 
 # Attach to the session

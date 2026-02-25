@@ -11,37 +11,29 @@ Set Theme "Catppuccin Mocha"
 Set TypingSpeed 50ms
 
 # Title card
-Type "# pam-preauth: MFA caching for SSH"
+Type "# pam-preauth: serialize and cache SSH MFA"
 Enter
-Type "# Problem: Ansible opens 50 connections → 50 MFA prompts"
+Type "# When Ansible opens 50 connections, only the 1st triggers MFA."
 Enter
-Type "# Solution: first connection does MFA, the rest sail through"
+Type "# The rest queue behind a lock, then use the cached result."
 Enter
 Sleep 3s
 
-# Act 1: Cache miss — first SSH triggers MFA
-Type "# Act 1: First connection (cache miss → MFA prompt)"
+# Act 1: single cold connection
+Type "# --- Act 1: Single connection, cold cache ---"
 Enter
 Sleep 1s
-Type "./demo/ssh-totp.sh"
+Type "./demo/ssh-attempt.sh"
 Enter
-Sleep 10s
+Sleep 12s
 
-# Act 2: Cache hit — second SSH skips MFA
-Type "# Act 2: Second connection (cache hit → no MFA)"
-Enter
-Sleep 1s
-Type "./demo/ssh-cached.sh"
-Enter
-Sleep 6s
-
-# Act 3: Concurrent connections via tmux
-Type "# Act 3: 6 simultaneous connections (the Ansible moment)"
+# Act 2: 6 cold simultaneous connections
+Type "# --- Act 2: 6 connections at once (the Ansible moment) ---"
 Enter
 Sleep 1s
 Type "./demo/concurrent.sh"
 Enter
-Sleep 8s
+Sleep 18s
 
 # Detach from tmux
 Ctrl+b
@@ -55,6 +47,7 @@ Enter
 Sleep 1s
 Show
 
-Type "echo 'All connections authenticated — only 1 MFA prompt total.'"
+# Summary
+Type "echo '6 connections. 1 MFA prompt. 5 queued behind the lock, served from cache.'"
 Enter
 Sleep 3s

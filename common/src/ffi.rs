@@ -36,6 +36,8 @@ extern "C" {
         module_data_name: *const c_char,
         data: *mut *const c_void,
     ) -> c_int;
+
+    pub fn pam_info(pamh: *mut PamHandle, fmt: *const c_char, ...) -> c_int;
 }
 
 /// Safe wrapper to get a PAM item as a &str
