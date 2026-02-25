@@ -63,7 +63,6 @@ provision:
         'JBSWY3DPEHPK3PXP' \
         '" TOTP_AUTH' \
         '" DISALLOW_REUSE' \
-        '" RATE_LIMIT 0 0' \
         > "${GA_DIR}/.google_authenticator"
       chown testuser:testuser "${GA_DIR}/.google_authenticator"
       chmod 0400 "${GA_DIR}/.google_authenticator"
