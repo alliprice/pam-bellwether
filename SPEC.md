@@ -47,12 +47,12 @@ Runs after `pam_duo` in the PAM stack (only reached on Duo success).
 ## PAM Stack (`/etc/pam.d/sshd`)
 
 ```
-auth  [success=done ignore=ignore default=ignore]  pam_preauth_gate.so timeout=60
+auth  [success=1 ignore=ignore default=ignore]  pam_preauth_gate.so timeout=60
 auth  required                                      pam_duo.so
 auth  required                                      pam_preauth_stamp.so
 ```
 
-If the gate returns `PAM_SUCCESS`, the `success=done` action jumps over `pam_duo` and lands on `pam_preauth_stamp`, which refreshes the token. If the gate returns `PAM_IGNORE`, we fall through to `pam_duo` normally.
+If the gate returns `PAM_SUCCESS`, the `success=1` action skips exactly one module (`pam_duo`) and lands on `pam_preauth_stamp`, which refreshes the token. If the gate returns `PAM_IGNORE`, we fall through to `pam_duo` normally. Using `success=1` instead of `success=done` ensures stamp always runs on cache hits to refresh the token mtime.
 
 ## Token Files
 

@@ -22,7 +22,7 @@ Cargo workspace with three crates: `gate/`, `stamp/`, `common/`.
 The two modules bracket `pam_duo` in the PAM stack:
 
 ```
-auth  [success=done ignore=ignore default=ignore]  pam_preauth_gate.so timeout=60
+auth  [success=1 ignore=ignore default=ignore]  pam_preauth_gate.so timeout=60
 auth  required                                      pam_duo.so
 auth  required                                      pam_preauth_stamp.so
 ```

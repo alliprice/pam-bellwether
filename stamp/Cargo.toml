@@ -1,0 +1,11 @@
+[package]
+name = "pam-preauth-stamp"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pam-preauth-common = { path = "../common" }
+libc = "0.2"

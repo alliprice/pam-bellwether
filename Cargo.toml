@@ -1,0 +1,7 @@
+[workspace]
+members = ["common", "gate", "stamp"]
+resolver = "2"
+
+[profile.release]
+strip = false
+lto = "thin"
