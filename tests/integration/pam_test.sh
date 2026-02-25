@@ -16,6 +16,7 @@ RESET='\033[0m'
 PASS_COUNT=0
 FAIL_COUNT=0
 FAILED_TESTS=()
+TOTP_SECRET="JBSWY3DPEHPK3PXP"
 
 pass() {
     local msg="$1"
@@ -53,16 +54,30 @@ assert_contains() {
 }
 
 # ---------------------------------------------------------------------------
-# SSH helper — uses password auth via sshpass so sshd runs the PAM auth stack.
+# SSH helper — uses expect to handle keyboard-interactive TOTP prompts.
 # Pubkey auth bypasses PAM auth entirely, which means our modules never run.
 # ---------------------------------------------------------------------------
 ssh_to_localhost() {
-    sshpass -p testpass ssh \
-        -o StrictHostKeyChecking=no \
-        -o PubkeyAuthentication=no \
-        -o ConnectTimeout=10 \
-        testuser@127.0.0.1 \
-        true
+    local totp_code
+    totp_code=$(oathtool --totp -b "$TOTP_SECRET")
+
+    expect -c "
+        set timeout 10
+        spawn ssh -o StrictHostKeyChecking=no \
+                  -o PubkeyAuthentication=no \
+                  -o PreferredAuthentications=keyboard-interactive \
+                  testuser@127.0.0.1 true
+        expect {
+            \"Verification code:\" {
+                send \"${totp_code}\r\"
+                expect eof
+            }
+            eof {}
+            timeout { exit 1 }
+        }
+        catch wait result
+        exit [lindex \$result 3]
+    "
 }
 
 # ---------------------------------------------------------------------------
@@ -174,43 +189,50 @@ install -d -m 0700 -o root -g root /run/pam-preauth
 echo "Backing up /etc/pam.d/sshd..."
 cp /etc/pam.d/sshd /etc/pam.d/sshd.bak
 
-# Install sshpass for password-based SSH (needed to trigger PAM auth stack)
-if ! command -v sshpass &>/dev/null; then
-    echo "Installing sshpass..."
-    dnf install -y -q sshpass 2>&1 || epel_needed=true
-    if [[ "${epel_needed:-}" == "true" ]] || ! command -v sshpass &>/dev/null; then
-        dnf install -y -q epel-release 2>&1
-        dnf install -y -q sshpass 2>&1
-    fi
+# Install expect and oath-toolkit if not already present (should be from provisioning)
+if ! command -v expect &>/dev/null || ! command -v oathtool &>/dev/null; then
+    echo "Installing expect and oath-toolkit..."
+    dnf install -y -q epel-release 2>&1 || true
+    dnf install -y -q expect oath-toolkit 2>&1
 fi
 
 echo "Writing test PAM config..."
 cat > /etc/pam.d/sshd <<'PAM_EOF'
-# Test PAM stack — pam_permit.so stands in for pam_duo.so
+# Test PAM stack — pam_google_authenticator.so stands in for pam_duo.so
 # TTL is 5 seconds for fast testing.
 auth  [success=1 ignore=ignore default=ignore]  pam_preauth_gate.so timeout=5 debug
-auth  required                                   pam_permit.so
+auth  required                                   pam_google_authenticator.so no_rate_limit
 auth  required                                   pam_preauth_stamp.so debug
 account required pam_permit.so
 password required pam_permit.so
 session required pam_permit.so
 PAM_EOF
 
-echo "Configuring sshd for password auth..."
-# Back up sshd_config and drop-in configs, then force password auth.
-# Cloud-init and distro drop-ins in sshd_config.d/ often disable password auth.
+echo "Configuring sshd for keyboard-interactive auth..."
+# Back up sshd_config and drop-in configs, then force keyboard-interactive auth.
+# Cloud-init and distro drop-ins in sshd_config.d/ often override auth settings.
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 if [[ -d /etc/ssh/sshd_config.d ]]; then
     cp -a /etc/ssh/sshd_config.d /etc/ssh/sshd_config.d.bak
-    # Override password auth in all drop-in configs
+    # Override auth settings in all drop-in configs
     for f in /etc/ssh/sshd_config.d/*.conf; do
-        [[ -f "$f" ]] && sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' "$f"
+        [[ -f "$f" ]] && sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' "$f"
+        [[ -f "$f" ]] && sed -i 's/^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' "$f"
     done
 fi
-# Also set in main config
-sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-grep -q '^PasswordAuthentication' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
+# Set in main config
+sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+grep -q '^PasswordAuthentication' /etc/ssh/sshd_config || echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config
+sed -i 's/^KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/^#KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' /etc/ssh/sshd_config
+grep -q '^KbdInteractiveAuthentication' /etc/ssh/sshd_config || echo 'KbdInteractiveAuthentication yes' >> /etc/ssh/sshd_config
+# Ensure ChallengeResponseAuthentication is enabled (alias for KbdInteractive on older sshd)
+sed -i 's/^ChallengeResponseAuthentication.*/ChallengeResponseAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/^#ChallengeResponseAuthentication.*/ChallengeResponseAuthentication yes/' /etc/ssh/sshd_config
+# Enable PAM
+sed -i 's/^#UsePAM.*/UsePAM yes/' /etc/ssh/sshd_config
+grep -q '^UsePAM' /etc/ssh/sshd_config || echo 'UsePAM yes' >> /etc/ssh/sshd_config
 
 echo "Restarting sshd..."
 systemctl restart sshd
