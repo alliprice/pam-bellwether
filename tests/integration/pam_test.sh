@@ -189,11 +189,12 @@ install -d -m 0700 -o root -g root /run/pam-preauth
 echo "Backing up /etc/pam.d/sshd..."
 cp /etc/pam.d/sshd /etc/pam.d/sshd.bak
 
-# Install expect and oath-toolkit if not already present (should be from provisioning)
+# Install expect and oathtool if not already present (should be from provisioning)
 if ! command -v expect &>/dev/null || ! command -v oathtool &>/dev/null; then
-    echo "Installing expect and oath-toolkit..."
+    echo "Installing expect and oathtool..."
     dnf install -y -q epel-release 2>&1 || true
-    dnf install -y -q expect oath-toolkit 2>&1
+    dnf config-manager --set-enabled epel 2>&1 || true
+    dnf install -y -q expect oathtool 2>&1
 fi
 
 echo "Writing test PAM config..."

@@ -41,9 +41,10 @@ provision:
         make \
         pkg-config
 
-      # Install EPEL (for google-authenticator, oath-toolkit, expect)
+      # Install EPEL (for google-authenticator, oathtool, expect)
       dnf install -y epel-release
-      dnf install -y google-authenticator oath-toolkit expect
+      dnf config-manager --set-enabled epel
+      dnf install -y google-authenticator oathtool expect
 
       # Enable sshd
       systemctl enable --now sshd
