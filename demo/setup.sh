@@ -22,17 +22,20 @@ for cmd in vhs tmux oathtool expect limactl; do
     fi
 done
 
-if ! limactl list --json 2>/dev/null | grep -q "\"$VM_NAME\""; then
-    echo "ERROR: Lima VM '$VM_NAME' not found." >&2
-    echo "Create it: limactl create --name=$VM_NAME lima-rocky9.yaml && limactl start $VM_NAME" >&2
-    exit 1
-fi
-
 VM_STATUS=$(limactl list --json 2>/dev/null | python3 -c "
 import sys, json
-for i in json.load(sys.stdin):
-    if i['name'] == '$VM_NAME':
-        print(i.get('status', 'unknown'))
+data = json.load(sys.stdin)
+# Handle both single VM object and array of VMs
+if isinstance(data, dict) and 'name' in data:
+    # Single VM object
+    if data.get('name') == '$VM_NAME':
+        print(data.get('status', 'unknown'))
+else:
+    # Array of VMs
+    items = data if isinstance(data, list) else data.get('items', [])
+    for i in items:
+        if i.get('name') == '$VM_NAME':
+            print(i.get('status', 'unknown'))
 ")
 
 if [[ "$VM_STATUS" != "Running" ]]; then
@@ -47,7 +50,7 @@ echo "Prerequisites OK."
 # Discover SSH port
 # ---------------------------------------------------------------------------
 SSH_PORT=$(limactl show-ssh --format=args "$VM_NAME" 2>/dev/null \
-    | grep -oE '\-p [0-9]+' | awk '{print $2}')
+    | grep -oE '(Port=|"-p ")[0-9]+' | grep -oE '[0-9]+' | head -1)
 
 if [[ -z "$SSH_PORT" ]]; then
     echo "ERROR: Could not determine SSH port for VM '$VM_NAME'." >&2
