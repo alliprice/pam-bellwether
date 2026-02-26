@@ -1,9 +1,9 @@
-# Lima config for pam-preauth integration testing on Rocky 9
+# Lima config for pam-bellwether integration testing on Rocky 9
 #
 # Usage:
-#   limactl create --name=pam-preauth lima-rocky9.yaml
-#   limactl start pam-preauth
-#   limactl shell pam-preauth
+#   limactl create --name=pam-bellwether lima-rocky9.yaml
+#   limactl start pam-bellwether
+#   limactl shell pam-bellwether
 #
 # Inside the VM:
 #   cd /Users/alliprice/code/pam-preauth
@@ -67,11 +67,11 @@ provision:
       chown testuser:testuser "${GA_DIR}/.google_authenticator"
       chmod 0400 "${GA_DIR}/.google_authenticator"
 
-      # Create runtime directory for pam-preauth
-      install -d -m 0700 -o root -g root /run/pam-preauth
+      # Create runtime directory for pam-bellwether
+      install -d -m 0700 -o root -g root /run/pam-bellwether
 
       # tmpfiles.d entry so it persists across reboots
-      echo 'd /run/pam-preauth 0700 root root -' > /etc/tmpfiles.d/pam-preauth.conf
+      echo 'd /run/pam-bellwether 0700 root root -' > /etc/tmpfiles.d/pam-bellwether.conf
 
   - mode: user
     script: |

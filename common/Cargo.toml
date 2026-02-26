@@ -1,5 +1,5 @@
 [package]
-name = "pam-preauth-common"
+name = "pam-bellwether-common"
 version = "0.1.0"
 edition = "2021"
 

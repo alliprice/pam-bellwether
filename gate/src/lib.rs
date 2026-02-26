@@ -2,7 +2,7 @@ use libc::{c_char, c_int, c_void};
 use std::os::unix::io::RawFd;
 use std::time::Duration;
 
-use pam_preauth_common::{config, ffi, flock, log as pam_log, paths, token};
+use pam_bellwether_common::{config, ffi, flock, log as pam_log, paths, token};
 use ffi::{PamHandle, PAM_IGNORE, PAM_SUCCESS};
 
 unsafe extern "C" fn lock_cleanup(
@@ -48,7 +48,7 @@ fn gate_inner(
     if !immediate {
         unsafe { ffi::send_info(pamh, "Waiting for MFA to complete in another session...") };
         pam_log::log_info(&format!(
-            "pam_preauth: gate waiting for flock ({}@{})",
+            "pam_bellwether: gate waiting for flock ({}@{})",
             user, rhost
         ));
         if !flock::block_lock(fd) {
@@ -72,7 +72,7 @@ fn gate_inner(
 
     if token::token_is_fresh(&token_path, ttl) {
         pam_log::log_info(&format!(
-            "pam_preauth: cache hit for {}@{}, skipping Duo",
+            "pam_bellwether: cache hit for {}@{}, skipping Duo",
             user, rhost
         ));
         unsafe { ffi::send_info(pamh, "MFA cached") };
@@ -89,7 +89,7 @@ fn gate_inner(
     } else {
         if debug {
             pam_log::log_debug(&format!(
-                "pam_preauth: cache miss for {}@{}, falling through to Duo",
+                "pam_bellwether: cache miss for {}@{}, falling through to Duo",
                 user, rhost
             ));
         }

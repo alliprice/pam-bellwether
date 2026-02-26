@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Integration tests for pam_preauth_gate.so and pam_preauth_stamp.so
+# Integration tests for pam_bellwether_gate.so and pam_bellwether_stamp.so
 #
-# Usage (Lima):  limactl shell pam-preauth -- sudo bash /Users/alliprice/code/pam-preauth/tests/integration/pam_test.sh
+# Usage (Lima):  limactl shell pam-bellwether -- sudo bash /Users/alliprice/code/pam-preauth/tests/integration/pam_test.sh
 # Usage (Vagrant): vagrant ssh -c 'sudo bash /vagrant/tests/integration/pam_test.sh'
 
 # ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ cleanup() {
     systemctl restart sshd 2>/dev/null || true
     echo "Restarted sshd"
 
-    rm -f /run/pam-preauth/testuser_*.token /run/pam-preauth/testuser_*.lock
+    rm -f /run/pam-bellwether/testuser_*.token /run/pam-bellwether/testuser_*.lock
     echo "Removed test token/lock files"
 
     echo ""
@@ -131,7 +131,7 @@ trap cleanup EXIT
 # ---------------------------------------------------------------------------
 # Prerequisites
 # ---------------------------------------------------------------------------
-echo "=== pam_preauth integration tests ==="
+echo "=== pam_bellwether integration tests ==="
 echo ""
 
 if [[ $EUID -ne 0 ]]; then
@@ -180,11 +180,11 @@ cd "$PROJECT_ROOT" && cargo build --release 2>&1
 echo "Build complete."
 
 echo "Installing .so files..."
-cp target/release/libpam_preauth_gate.so  /usr/lib64/security/pam_preauth_gate.so
-cp target/release/libpam_preauth_stamp.so /usr/lib64/security/pam_preauth_stamp.so
+cp target/release/libpam_bellwether_gate.so  /usr/lib64/security/pam_bellwether_gate.so
+cp target/release/libpam_bellwether_stamp.so /usr/lib64/security/pam_bellwether_stamp.so
 
-echo "Creating /run/pam-preauth..."
-install -d -m 0700 -o root -g root /run/pam-preauth
+echo "Creating /run/pam-bellwether..."
+install -d -m 0700 -o root -g root /run/pam-bellwether
 
 echo "Backing up /etc/pam.d/sshd..."
 cp /etc/pam.d/sshd /etc/pam.d/sshd.bak
@@ -201,9 +201,9 @@ echo "Writing test PAM config..."
 cat > /etc/pam.d/sshd <<'PAM_EOF'
 # Test PAM stack — pam_google_authenticator.so stands in for pam_duo.so
 # TTL is 5 seconds for fast testing.
-auth  [success=1 ignore=ignore default=ignore]  pam_preauth_gate.so timeout=5 debug
+auth  [success=1 ignore=ignore default=ignore]  pam_bellwether_gate.so timeout=5 debug
 auth  required                                   pam_google_authenticator.so
-auth  required                                   pam_preauth_stamp.so debug
+auth  required                                   pam_bellwether_stamp.so debug
 account required pam_permit.so
 password required pam_permit.so
 session required pam_permit.so
@@ -248,8 +248,8 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "--- Test 1: Build verification ---"
 
-GATE_SO=/usr/lib64/security/pam_preauth_gate.so
-STAMP_SO=/usr/lib64/security/pam_preauth_stamp.so
+GATE_SO=/usr/lib64/security/pam_bellwether_gate.so
+STAMP_SO=/usr/lib64/security/pam_bellwether_stamp.so
 
 if [[ -f "$GATE_SO" ]]; then
     pass "gate .so exists at $GATE_SO"
@@ -294,7 +294,7 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "--- Test 2: Cache miss (first connection) ---"
 
-rm -f /run/pam-preauth/testuser_*.token /run/pam-preauth/testuser_*.lock
+rm -f /run/pam-bellwether/testuser_*.token /run/pam-bellwether/testuser_*.lock
 
 # Capture a timestamp just before the SSH attempt so journalctl queries are tight
 T2_START=$(date --iso-8601=seconds)
@@ -306,7 +306,7 @@ else
     fail "SSH failed on first connection"
 fi
 
-TOKEN_FILE=/run/pam-preauth/testuser_127.0.0.1.token
+TOKEN_FILE=/run/pam-bellwether/testuser_127.0.0.1.token
 if [[ -f "$TOKEN_FILE" ]]; then
     pass "token file created at $TOKEN_FILE"
 else
@@ -315,7 +315,7 @@ fi
 
 # Allow a moment for the log entry to land
 sleep 1
-JOURNAL_T2=$(journalctl -t pam_preauth --since "$T2_START" 2>/dev/null || journalctl --since "$T2_START" 2>/dev/null | grep -i "pam_preauth\|pam-preauth" || true)
+JOURNAL_T2=$(journalctl -t pam_bellwether --since "$T2_START" 2>/dev/null || journalctl --since "$T2_START" 2>/dev/null | grep -i "pam_bellwether\|pam-bellwether" || true)
 if echo "$JOURNAL_T2" | grep -qi "IGNORE\|cache.miss\|stale\|no.token\|miss"; then
     pass "syslog shows cache miss on first connection"
 else
@@ -340,7 +340,7 @@ else
 fi
 
 sleep 1
-JOURNAL_T3=$(journalctl -t pam_preauth --since "$T3_START" 2>/dev/null || journalctl --since "$T3_START" 2>/dev/null | grep -i "pam_preauth\|pam-preauth" || true)
+JOURNAL_T3=$(journalctl -t pam_bellwether --since "$T3_START" 2>/dev/null || journalctl --since "$T3_START" 2>/dev/null | grep -i "pam_bellwether\|pam-bellwether" || true)
 if echo "$JOURNAL_T3" | grep -qi "SUCCESS\|cache.hit\|fresh\|hit\|valid"; then
     pass "syslog shows cache hit on second connection"
 else
@@ -374,7 +374,7 @@ else
 fi
 
 sleep 1
-JOURNAL_T4=$(journalctl -t pam_preauth --since "$T4_START" 2>/dev/null || journalctl --since "$T4_START" 2>/dev/null | grep -i "pam_preauth\|pam-preauth" || true)
+JOURNAL_T4=$(journalctl -t pam_bellwether --since "$T4_START" 2>/dev/null || journalctl --since "$T4_START" 2>/dev/null | grep -i "pam_bellwether\|pam-bellwether" || true)
 if echo "$JOURNAL_T4" | grep -qi "IGNORE\|cache.miss\|stale\|miss\|expired"; then
     pass "syslog shows cache miss after TTL expiry"
 else
@@ -388,7 +388,7 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "--- Test 5: Concurrent connections (10 parallel SSH sessions) ---"
 
-rm -f /run/pam-preauth/testuser_*.token /run/pam-preauth/testuser_*.lock
+rm -f /run/pam-bellwether/testuser_*.token /run/pam-bellwether/testuser_*.lock
 
 T5_START=$(date --iso-8601=seconds)
 sleep 1
@@ -430,13 +430,13 @@ else
 fi
 
 # Should be exactly 1 token file for testuser (all connections come from 127.0.0.1)
-TOKEN_COUNT=$(find /run/pam-preauth/ -name "testuser_*.token" | wc -l)
+TOKEN_COUNT=$(find /run/pam-bellwether/ -name "testuser_*.token" | wc -l)
 assert_eq "$TOKEN_COUNT" "1" "exactly 1 token file for testuser after concurrent connections"
 
 # Check syslog: we expect exactly 1 cache miss (the first connection through the lock)
 # and at least some cache hits (connections that queued behind the lock saw the fresh token)
 sleep 1
-JOURNAL_T5=$(journalctl -t pam_preauth --since "$T5_START" 2>/dev/null || journalctl --since "$T5_START" 2>/dev/null | grep -i "pam_preauth\|pam-preauth" || true)
+JOURNAL_T5=$(journalctl -t pam_bellwether --since "$T5_START" 2>/dev/null || journalctl --since "$T5_START" 2>/dev/null | grep -i "pam_bellwether\|pam-bellwether" || true)
 
 MISS_COUNT=$(echo "$JOURNAL_T5" | grep -ci "IGNORE\|cache.miss\|stale\|miss" || true)
 HIT_COUNT=$(echo "$JOURNAL_T5"  | grep -ci "SUCCESS\|cache.hit\|fresh\|hit"  || true)

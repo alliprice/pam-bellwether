@@ -1,4 +1,4 @@
-# pam-preauth
+# pam-bellwether
 
 PAM modules for Ansible-safe Duo MFA on a Rocky 9 bastion host.
 
@@ -12,51 +12,51 @@ Serialize concurrent auth attempts per user+IP using a flock, then cache a succe
 
 ```
 Connection arrives
-  → acquire /run/pam-preauth/<user>_<ip>.lock  (blocking flock — queues concurrent connections)
-  → check /run/pam-preauth/<user>_<ip>.token   (mtime-based, configurable TTL)
+  → acquire /run/pam-bellwether/<user>_<ip>.lock  (blocking flock — queues concurrent connections)
+  → check /run/pam-bellwether/<user>_<ip>.token   (mtime-based, configurable TTL)
     → fresh?  return PAM_SUCCESS, release lock
     → stale?  return PAM_IGNORE, release lock   (falls through to pam_duo)
 After pam_duo succeeds:
-  → touch /run/pam-preauth/<user>_<ip>.token, release lock
+  → touch /run/pam-bellwether/<user>_<ip>.token, release lock
 ```
 
 ## Modules
 
 Two small Rust PAM modules compiled to `.so`:
 
-### `pam_preauth_gate.so`
+### `pam_bellwether_gate.so`
 
 Runs before `pam_duo` in the PAM stack.
 
 - Gets `PAM_USER` and `PAM_RHOST` from the PAM handle
-- Derives lock path: `/run/pam-preauth/<user>_<ip>.lock`
+- Derives lock path: `/run/pam-bellwether/<user>_<ip>.lock`
 - Acquires an exclusive flock (blocking) — concurrent connections queue here
 - Checks token file mtime against TTL
 - Fresh → return `PAM_SUCCESS` (skip duo, but stamp module still runs to refresh token)
 - Stale → return `PAM_IGNORE` (fall through to pam_duo)
 - Passes lock fd to stamp module via `pam_set_data`
 
-### `pam_preauth_stamp.so`
+### `pam_bellwether_stamp.so`
 
 Runs after `pam_duo` in the PAM stack (only reached on Duo success).
 
 - Retrieves lock fd from `pam_get_data`
-- Touches `/run/pam-preauth/<user>_<ip>.token`
+- Touches `/run/pam-bellwether/<user>_<ip>.token`
 - Releases flock
 
 ## PAM Stack (`/etc/pam.d/sshd`)
 
 ```
-auth  [success=1 ignore=ignore default=ignore]  pam_preauth_gate.so timeout=60
+auth  [success=1 ignore=ignore default=ignore]  pam_bellwether_gate.so timeout=60
 auth  required                                      pam_duo.so
-auth  required                                      pam_preauth_stamp.so
+auth  required                                      pam_bellwether_stamp.so
 ```
 
-If the gate returns `PAM_SUCCESS`, the `success=1` action skips exactly one module (`pam_duo`) and lands on `pam_preauth_stamp`, which refreshes the token. If the gate returns `PAM_IGNORE`, we fall through to `pam_duo` normally. Using `success=1` instead of `success=done` ensures stamp always runs on cache hits to refresh the token mtime.
+If the gate returns `PAM_SUCCESS`, the `success=1` action skips exactly one module (`pam_duo`) and lands on `pam_bellwether_stamp`, which refreshes the token. If the gate returns `PAM_IGNORE`, we fall through to `pam_duo` normally. Using `success=1` instead of `success=done` ensures stamp always runs on cache hits to refresh the token mtime.
 
 ## Token Files
 
-- Location: `/run/pam-preauth/` (tmpfs, cleared on reboot)
+- Location: `/run/pam-bellwether/` (tmpfs, cleared on reboot)
 - Filename: `<username>_<ip>.token` and `<username>_<ip>.lock`
 - Auth check: compare file mtime to current time, allow if within TTL
 - TTL default: 60 seconds (configurable via PAM arg `timeout=N`)
@@ -64,7 +64,7 @@ If the gate returns `PAM_SUCCESS`, the `success=1` action skips exactly one modu
 ## Security Notes
 
 - Per-user-per-IP prevents one user/IP from poisoning cache for another source
-- `/run/pam-preauth/` owned root:root, mode 0700
+- `/run/pam-bellwether/` owned root:root, mode 0700
 - Token files owned root:root — user can't forge them
 - Flock prevents TOCTOU race between check and write
 - Reboot clears all tokens (tmpfs)
@@ -100,9 +100,9 @@ Stamp always returns `PAM_SUCCESS` because it runs after Duo has already succeed
 ```bash
 cargo build --release
 # produces:
-#   target/release/libpam_preauth_gate.so
-#   target/release/libpam_preauth_stamp.so
-sudo cp target/release/libpam_preauth_*.so /usr/lib64/security/
+#   target/release/libpam_bellwether_gate.so
+#   target/release/libpam_bellwether_stamp.so
+sudo cp target/release/libpam_bellwether_*.so /usr/lib64/security/
 ```
 
 Workspace with two crates: `gate/` and `stamp/`, plus a shared `common/` crate for token path logic and flock helpers.
@@ -110,5 +110,5 @@ Workspace with two crates: `gate/` and `stamp/`, plus a shared `common/` crate f
 ## Decisions
 
 - **TTL**: PAM stack arg only (`timeout=60`). No per-user config file.
-- **Boot setup**: Include a `tmpfiles.d` entry to create `/run/pam-preauth/` with correct permissions.
+- **Boot setup**: Include a `tmpfiles.d` entry to create `/run/pam-bellwether/` with correct permissions.
 - **Failed Duo**: Brief penalty delay (2 seconds) before releasing the lock. Slows brute force and gives Duo time to settle before the next queued connection tries.

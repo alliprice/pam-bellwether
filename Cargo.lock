@@ -143,7 +143,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
-name = "pam-preauth-common"
+name = "pam-bellwether-common"
 version = "0.1.0"
 dependencies = [
  "libc",
@@ -151,19 +151,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "pam-preauth-gate"
+name = "pam-bellwether-gate"
 version = "0.1.0"
 dependencies = [
  "libc",
- "pam-preauth-common",
+ "pam-bellwether-common",
 ]
 
 [[package]]
-name = "pam-preauth-stamp"
+name = "pam-bellwether-stamp"
 version = "0.1.0"
 dependencies = [
  "libc",
- "pam-preauth-common",
+ "pam-bellwether-common",
 ]
 
 [[package]]

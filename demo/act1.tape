@@ -1,7 +1,7 @@
-# pam-preauth demo: MFA caching + flock serialization
+# pam-bellwether demo: MFA caching + flock serialization
 # Record: vhs demo/act1.tape
 
-Output demo/pam-preauth-demo.gif
+Output demo/pam-bellwether-demo.gif
 
 Set FontSize 20
 Set Width 1400
@@ -11,7 +11,7 @@ Set TypingSpeed 10ms
 
 # Hidden setup: clear cache and clean the terminal
 Hide
-Type "limactl shell pam-preauth -- sudo bash -c 'rm -f /run/pam-preauth/*.token /run/pam-preauth/*.lock'"
+Type "limactl shell pam-preauth -- sudo bash -c 'rm -f /run/pam-bellwether/*.token /run/pam-bellwether/*.lock'"
 Enter
 Sleep 2s
 Type "clear"
@@ -20,7 +20,7 @@ Sleep 0.5s
 Show
 
 # Title card
-Type "# pam-preauth: serialize and cache SSH MFA"
+Type "# pam-bellwether: serialize and cache SSH MFA"
 Enter
 Type "# When Ansible opens 50 connections, only the 1st triggers MFA."
 Enter

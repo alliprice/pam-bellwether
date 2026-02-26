@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-const RUN_DIR: &str = "/run/pam-preauth";
+const RUN_DIR: &str = "/run/pam-bellwether";
 
 /// Sanitize input to allow only safe characters [a-zA-Z0-9._:-]
 /// Returns None if empty, contains slashes, or contains null bytes.
@@ -89,7 +89,7 @@ mod tests {
     fn test_lock_path_valid() {
         assert_eq!(
             lock_path("root", "10.0.0.1"),
-            Some(PathBuf::from("/run/pam-preauth/root_10.0.0.1.lock"))
+            Some(PathBuf::from("/run/pam-bellwether/root_10.0.0.1.lock"))
         );
     }
 
@@ -109,7 +109,7 @@ mod tests {
     fn test_token_path_valid() {
         assert_eq!(
             token_path("deploy", "192.168.1.5"),
-            Some(PathBuf::from("/run/pam-preauth/deploy_192.168.1.5.token"))
+            Some(PathBuf::from("/run/pam-bellwether/deploy_192.168.1.5.token"))
         );
     }
 

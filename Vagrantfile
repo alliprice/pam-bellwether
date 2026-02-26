@@ -1,4 +1,4 @@
-# Vagrantfile for pam-preauth integration testing
+# Vagrantfile for pam-bellwether integration testing
 #
 # Usage:
 #   vagrant up --provider=qemu    # first time (arm64 macOS)
@@ -33,7 +33,7 @@ Vagrant.configure("2") do |config|
 
   # --- Provider: VirtualBox (x86_64) ---
   config.vm.provider "virtualbox" do |vb|
-    vb.name   = "pam-preauth-test"
+    vb.name   = "pam-bellwether-test"
     vb.cpus   = 2
     vb.memory = 2048
   end
@@ -75,20 +75,20 @@ Vagrant.configure("2") do |config|
     fi
     echo "testuser:testpass" | chpasswd
 
-    echo "==> Creating /run/pam-preauth (tmpfs dir for token/lock files)"
+    echo "==> Creating /run/pam-bellwether (tmpfs dir for token/lock files)"
     # On real deployments systemd-tmpfiles handles this on boot.
     # For the test VM we create it manually so the modules work immediately.
-    if [ ! -d /run/pam-preauth ]; then
-      mkdir -p /run/pam-preauth
+    if [ ! -d /run/pam-bellwether ]; then
+      mkdir -p /run/pam-bellwether
     fi
-    chown root:root /run/pam-preauth
-    chmod 0700 /run/pam-preauth
+    chown root:root /run/pam-bellwether
+    chmod 0700 /run/pam-bellwether
 
-    echo "==> Installing tmpfiles.d entry for pam-preauth"
-    cat > /etc/tmpfiles.d/pam-preauth.conf <<'EOF'
-# Recreate the pam-preauth token/lock directory on boot.
+    echo "==> Installing tmpfiles.d entry for pam-bellwether"
+    cat > /etc/tmpfiles.d/pam-bellwether.conf <<'EOF'
+# Recreate the pam-bellwether token/lock directory on boot.
 # Files here are intentionally ephemeral — cleared on each reboot.
-d /run/pam-preauth 0700 root root -
+d /run/pam-bellwether 0700 root root -
 EOF
 
     echo "==> System provisioning complete"

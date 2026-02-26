@@ -1,7 +1,7 @@
 use libc::{c_char, c_int, c_void};
 use std::os::unix::io::RawFd;
-use pam_preauth_common::{ffi, flock, paths, token, config};
-use pam_preauth_common::log as pam_log;
+use pam_bellwether_common::{ffi, flock, paths, token, config};
+use pam_bellwether_common::log as pam_log;
 
 fn stamp_inner(pamh: *mut ffi::PamHandle, argc: c_int, argv: *const *const c_char) {
     let args = unsafe { config::parse_args(argc, argv) };
@@ -19,7 +19,7 @@ fn stamp_inner(pamh: *mut ffi::PamHandle, argc: c_int, argv: *const *const c_cha
 
     if rc != ffi::PAM_SUCCESS || data.is_null() {
         if debug {
-            pam_log::log_debug("pam_preauth stamp: no lock fd found in pam data, skipping");
+            pam_log::log_debug("pam_bellwether stamp: no lock fd found in pam data, skipping");
         }
         return;
     }
@@ -34,7 +34,7 @@ fn stamp_inner(pamh: *mut ffi::PamHandle, argc: c_int, argv: *const *const c_cha
     if let (Some(user), Some(rhost)) = (user_opt, rhost_opt) {
         if let Some(path) = paths::token_path(user, rhost) {
             if !token::touch_token(&path) {
-                pam_log::log_info("pam_preauth stamp: failed to touch token file");
+                pam_log::log_info("pam_bellwether stamp: failed to touch token file");
             } else {
                 // Only send "MFA verified" if this wasn't a cache hit
                 // (gate sets PAM_DATA_CACHED_KEY when serving from cache)
@@ -51,16 +51,16 @@ fn stamp_inner(pamh: *mut ffi::PamHandle, argc: c_int, argv: *const *const c_cha
                 }
                 if debug {
                     pam_log::log_debug(&format!(
-                        "pam_preauth: stamped token for {}@{}",
+                        "pam_bellwether: stamped token for {}@{}",
                         user, rhost
                     ));
                 }
             }
         } else {
-            pam_log::log_info("pam_preauth stamp: could not derive token path");
+            pam_log::log_info("pam_bellwether stamp: could not derive token path");
         }
     } else {
-        pam_log::log_info("pam_preauth stamp: missing user or rhost, cannot touch token");
+        pam_log::log_info("pam_bellwether stamp: missing user or rhost, cannot touch token");
     }
 
     // Step 4: always unlock the fd (gate's cleanup closes it at pam_end time).

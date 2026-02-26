@@ -2,7 +2,7 @@ use libc::{self, c_int, LOG_AUTH, LOG_DEBUG, LOG_INFO};
 use std::ffi::CString;
 
 // Ident must live for the lifetime of the log session
-const IDENT: &[u8] = b"pam_preauth\0";
+const IDENT: &[u8] = b"pam_bellwether\0";
 
 fn syslog(priority: c_int, msg: &str) {
     // Use "%s" format to prevent format string injection

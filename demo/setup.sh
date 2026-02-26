@@ -12,7 +12,7 @@ TOTP_SECRET="JBSWY3DPEHPK3PXP"
 # ---------------------------------------------------------------------------
 # Prerequisites
 # ---------------------------------------------------------------------------
-echo "=== pam-preauth demo setup ==="
+echo "=== pam-bellwether demo setup ==="
 echo ""
 
 for cmd in vhs tmux oathtool expect limactl; do
@@ -73,9 +73,9 @@ echo "Build complete."
 
 echo "Installing .so files..."
 limactl shell "$VM_NAME" -- sudo bash -c "
-    cp '$PROJECT_ROOT/target/release/libpam_preauth_gate.so'  /usr/lib64/security/pam_preauth_gate.so
-    cp '$PROJECT_ROOT/target/release/libpam_preauth_stamp.so' /usr/lib64/security/pam_preauth_stamp.so
-    install -d -m 0700 -o root -g root /run/pam-preauth
+    cp '$PROJECT_ROOT/target/release/libpam_bellwether_gate.so'  /usr/lib64/security/pam_bellwether_gate.so
+    cp '$PROJECT_ROOT/target/release/libpam_bellwether_stamp.so' /usr/lib64/security/pam_bellwether_stamp.so
+    install -d -m 0700 -o root -g root /run/pam-bellwether
 "
 
 # ---------------------------------------------------------------------------
@@ -85,9 +85,9 @@ echo "Configuring PAM stack (timeout=30)..."
 limactl shell "$VM_NAME" -- sudo bash -c "
 cat > /etc/pam.d/sshd <<'PAM_EOF'
 # Demo PAM stack — google-authenticator stands in for pam_duo
-auth  [success=1 ignore=ignore default=ignore]  pam_preauth_gate.so timeout=30
+auth  [success=1 ignore=ignore default=ignore]  pam_bellwether_gate.so timeout=30
 auth  required                                   pam_google_authenticator.so echo_verification_code
-auth  required                                   pam_preauth_stamp.so
+auth  required                                   pam_bellwether_stamp.so
 account required pam_permit.so
 password required pam_permit.so
 session required pam_permit.so
@@ -164,7 +164,7 @@ TE_EOF
 echo "Restarting sshd..."
 limactl shell "$VM_NAME" -- sudo bash -c '
     systemctl restart sshd
-    rm -f /run/pam-preauth/*.token /run/pam-preauth/*.lock
+    rm -f /run/pam-bellwether/*.token /run/pam-bellwether/*.lock
 '
 sleep 1
 

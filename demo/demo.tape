@@ -1,8 +1,8 @@
-# VHS tape file for pam-preauth demo
+# VHS tape file for pam-bellwether demo
 # Record: vhs demo/demo.tape
-# Output: demo/pam-preauth-demo.gif
+# Output: demo/pam-bellwether-demo.gif
 
-Output demo/pam-preauth-demo.gif
+Output demo/pam-bellwether-demo.gif
 
 Set FontSize 20
 Set Width 1400
@@ -11,7 +11,7 @@ Set Theme "Catppuccin Mocha"
 Set TypingSpeed 50ms
 
 # Title card
-Type "# pam-preauth: serialize and cache SSH MFA"
+Type "# pam-bellwether: serialize and cache SSH MFA"
 Enter
 Type "# When Ansible opens 50 connections, only the 1st triggers MFA."
 Enter

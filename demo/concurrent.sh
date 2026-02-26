@@ -11,7 +11,7 @@ SESSION="pam-demo"
 PANE_COUNT=6
 
 # Clear cache so all connections start cold
-limactl shell pam-preauth -- sudo rm -f /run/pam-preauth/*.token /run/pam-preauth/*.lock
+limactl shell pam-preauth -- sudo rm -f /run/pam-bellwether/*.token /run/pam-bellwether/*.lock
 echo "Clearing MFA cache..."
 sleep 1
 echo "Launching $PANE_COUNT simultaneous connections..."

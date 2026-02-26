@@ -4,8 +4,8 @@ use std::time::Duration;
 
 pub const DEFAULT_TTL: Duration = Duration::from_secs(60);
 pub const PENALTY_DELAY: Duration = Duration::from_secs(2);
-pub const PAM_DATA_KEY: &[u8] = b"pam_preauth_lock_fd\0";
-pub const PAM_DATA_CACHED_KEY: &[u8] = b"pam_preauth_cached\0";
+pub const PAM_DATA_KEY: &[u8] = b"pam_bellwether_lock_fd\0";
+pub const PAM_DATA_CACHED_KEY: &[u8] = b"pam_bellwether_cached\0";
 
 /// Parse PAM module args from argc/argv into a Vec of &str.
 ///
