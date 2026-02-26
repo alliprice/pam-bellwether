@@ -50,11 +50,13 @@ Runs after your MFA module in the PAM stack (only reached on MFA success).
 
 ```
 auth  [success=1 ignore=ignore default=ignore]  pam_bellwether_gate.so timeout=60
-auth  required                                      pam_duo.so    # or any MFA module
+auth  requisite                                     pam_duo.so    # or any MFA module
 auth  required                                      pam_bellwether_stamp.so
 ```
 
 If the gate returns `PAM_SUCCESS`, the `success=1` action skips exactly one module (your MFA module) and lands on `pam_bellwether_stamp`, which refreshes the token. If the gate returns `PAM_IGNORE`, we fall through to the MFA module normally. Using `success=1` instead of `success=done` ensures stamp always runs on cache hits to refresh the token mtime.
+
+**The MFA module MUST be `requisite`, not `required`.** With `required`, PAM notes a failure but continues executing the stack — stamp would run and touch the token even after MFA failure, poisoning the cache. The next connection within the TTL would hit the fresh token and skip MFA entirely. `requisite` stops the stack immediately on failure, so stamp only runs when MFA succeeds (or was legitimately skipped by the gate's cache hit).
 
 ## Token Files
 
@@ -117,7 +119,7 @@ These modules assume `PAM_RHOST` is a network-verified source address, which is 
 | Can't open/touch token file | Return `PAM_SUCCESS`, don't touch token |
 | Can't release flock | Return `PAM_SUCCESS` (fd cleanup on process exit) |
 
-Stamp always returns `PAM_SUCCESS` because it runs after MFA has already succeeded — the user is authenticated. Stamp failures just mean the cache doesn't get refreshed, so the next connection does a full MFA prompt.
+Stamp always returns `PAM_SUCCESS` because it only runs after MFA has already succeeded (enforced by `requisite` on the MFA module — see PAM stack section). Stamp failures just mean the cache doesn't get refreshed, so the next connection does a full MFA prompt.
 
 ## Build
 

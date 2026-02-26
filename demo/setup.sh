@@ -86,7 +86,7 @@ limactl shell "$VM_NAME" -- sudo bash -c "
 cat > /etc/pam.d/sshd <<'PAM_EOF'
 # Demo PAM stack — google-authenticator stands in for pam_duo
 auth  [success=1 ignore=ignore default=ignore]  pam_bellwether_gate.so timeout=30
-auth  required                                   pam_google_authenticator.so echo_verification_code
+auth  requisite                                  pam_google_authenticator.so echo_verification_code
 auth  required                                   pam_bellwether_stamp.so
 account required pam_permit.so
 password required pam_permit.so
