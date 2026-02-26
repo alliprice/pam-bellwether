@@ -121,6 +121,44 @@ limactl shell "$VM_NAME" -- sudo bash -c '
 '
 
 # ---------------------------------------------------------------------------
+# SELinux policy: allow sshd to manage google_authenticator files in home dirs
+# ---------------------------------------------------------------------------
+# pam_google_authenticator writes an atomic tempfile in the user's home dir
+# when recording a used TOTP code. Without this, sshd_t is denied create/write
+# on user_home_dir_t, causing "Failed to create tempfile" and a double-round
+# auth prompt on every login.
+echo "Installing SELinux policy for google_authenticator..."
+limactl shell "$VM_NAME" -- sudo bash -c '
+    cd /tmp
+    cat > sshd_google_auth.te << '"'"'TE_EOF'"'"'
+module sshd_google_auth 1.0;
+
+require {
+    type sshd_t;
+    type user_home_dir_t;
+    type user_home_t;
+    class file { create write read open getattr setattr rename unlink };
+    class dir { write add_name remove_name };
+}
+
+#============= sshd_t ==============
+# Allow sshd (running pam_google_authenticator) to create and update the
+# .google_authenticator file and its atomic tempfile in user home directories.
+allow sshd_t user_home_dir_t:file { create write read open getattr setattr rename unlink };
+allow sshd_t user_home_dir_t:dir { write add_name remove_name };
+allow sshd_t user_home_t:file { create write read open getattr setattr rename unlink };
+allow sshd_t user_home_t:dir { write add_name remove_name };
+TE_EOF
+    checkmodule -M -m -o sshd_google_auth.mod sshd_google_auth.te
+    semodule_package -o sshd_google_auth.pp -m sshd_google_auth.mod
+    # Remove any previous version of the module before installing
+    semodule -r sshd_google_auth 2>/dev/null || true
+    semodule -r sshd_google_auth2 2>/dev/null || true
+    semodule -i sshd_google_auth.pp
+    echo "SELinux module installed: $(semodule -l | grep sshd_google)"
+'
+
+# ---------------------------------------------------------------------------
 # Restart sshd and clear tokens
 # ---------------------------------------------------------------------------
 echo "Restarting sshd..."

@@ -35,11 +35,26 @@ fn stamp_inner(pamh: *mut ffi::PamHandle, argc: c_int, argv: *const *const c_cha
         if let Some(path) = paths::token_path(user, rhost) {
             if !token::touch_token(&path) {
                 pam_log::log_info("pam_preauth stamp: failed to touch token file");
-            } else if debug {
-                pam_log::log_debug(&format!(
-                    "pam_preauth: stamped token for {}@{}",
-                    user, rhost
-                ));
+            } else {
+                // Only send "MFA verified" if this wasn't a cache hit
+                // (gate sets PAM_DATA_CACHED_KEY when serving from cache)
+                let mut cached_data: *const c_void = std::ptr::null();
+                let cached_rc = unsafe {
+                    ffi::pam_get_data(
+                        pamh as *const ffi::PamHandle,
+                        config::PAM_DATA_CACHED_KEY.as_ptr() as *const c_char,
+                        &mut cached_data,
+                    )
+                };
+                if cached_rc != ffi::PAM_SUCCESS || cached_data.is_null() {
+                    unsafe { ffi::send_info(pamh, "MFA verified") };
+                }
+                if debug {
+                    pam_log::log_debug(&format!(
+                        "pam_preauth: stamped token for {}@{}",
+                        user, rhost
+                    ));
+                }
             }
         } else {
             pam_log::log_info("pam_preauth stamp: could not derive token path");

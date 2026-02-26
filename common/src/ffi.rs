@@ -1,4 +1,4 @@
-use libc::{c_char, c_int, c_void};
+use libc::{self, c_char, c_int, c_void};
 
 /// Opaque PAM handle
 pub enum PamHandle {}
@@ -80,4 +80,42 @@ pub unsafe fn get_pam_item(pamh: *mut PamHandle, item_type: c_int) -> Option<&'s
     }
     let cstr = std::ffi::CStr::from_ptr(item as *const c_char);
     cstr.to_str().ok()
+}
+
+/// Send a PAM_TEXT_INFO message to the user via the PAM conversation function.
+///
+/// # Safety
+/// pamh must be a valid PAM handle from a PAM callback
+pub unsafe fn send_info(pamh: *mut PamHandle, message: &str) {
+    let msg_cstr = match std::ffi::CString::new(message) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let msg = PamMessage {
+        msg_style: PAM_TEXT_INFO,
+        msg: msg_cstr.as_ptr(),
+    };
+    let msg_ptr: *const PamMessage = &msg;
+
+    let mut conv_ptr: *const c_void = std::ptr::null();
+    let rc = pam_get_item(pamh, PAM_CONV, &mut conv_ptr);
+    if rc != PAM_SUCCESS || conv_ptr.is_null() {
+        return;
+    }
+
+    let conv = &*(conv_ptr as *const PamConv);
+    let conv_fn = match conv.conv {
+        Some(f) => f,
+        None => return,
+    };
+
+    let mut resp: *mut PamResponse = std::ptr::null_mut();
+    conv_fn(1, &msg_ptr, &mut resp, conv.appdata_ptr);
+    if !resp.is_null() {
+        if !(*resp).resp.is_null() {
+            libc::free((*resp).resp as *mut c_void);
+        }
+        libc::free(resp as *mut c_void);
+    }
 }

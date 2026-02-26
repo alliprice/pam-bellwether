@@ -18,42 +18,14 @@ unsafe extern "C" fn lock_cleanup(
     flock::release_lock(fd);
 }
 
-/// Send a PAM_TEXT_INFO message to the user via the PAM conversation function.
-fn send_info(pamh: *mut ffi::PamHandle, message: &str) {
-    let msg_cstr = match std::ffi::CString::new(message) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-
-    let msg = ffi::PamMessage {
-        msg_style: ffi::PAM_TEXT_INFO,
-        msg: msg_cstr.as_ptr(),
-    };
-    let msg_ptr: *const ffi::PamMessage = &msg;
-
-    let mut conv_ptr: *const c_void = std::ptr::null();
-    let rc = unsafe { ffi::pam_get_item(pamh, ffi::PAM_CONV, &mut conv_ptr) };
-    if rc != PAM_SUCCESS || conv_ptr.is_null() {
-        return;
-    }
-
-    let conv = unsafe { &*(conv_ptr as *const ffi::PamConv) };
-    let conv_fn = match conv.conv {
-        Some(f) => f,
-        None => return,
-    };
-
-    let mut resp: *mut ffi::PamResponse = std::ptr::null_mut();
-    unsafe {
-        conv_fn(1, &msg_ptr, &mut resp, conv.appdata_ptr);
-        if !resp.is_null() {
-            if !(*resp).resp.is_null() {
-                libc::free((*resp).resp as *mut c_void);
-            }
-            libc::free(resp as *mut c_void);
-        }
-    }
+unsafe extern "C" fn noop_cleanup(
+    _pamh: *mut PamHandle,
+    _data: *mut c_void,
+    _error_status: c_int,
+) {
+    // No-op — flag data is just a sentinel value, nothing to free.
 }
+
 
 fn gate_inner(
     pamh: *mut PamHandle,
@@ -74,7 +46,7 @@ fn gate_inner(
     let fd = flock::open_lock(&lock_path)?;
     let immediate = flock::try_lock(fd)?;
     if !immediate {
-        send_info(pamh, "Waiting for MFA to complete in another session...");
+        unsafe { ffi::send_info(pamh, "Waiting for MFA to complete in another session...") };
         pam_log::log_info(&format!(
             "pam_preauth: gate waiting for flock ({}@{})",
             user, rhost
@@ -103,6 +75,16 @@ fn gate_inner(
             "pam_preauth: cache hit for {}@{}, skipping Duo",
             user, rhost
         ));
+        unsafe { ffi::send_info(pamh, "MFA cached") };
+        // Signal to stamp that this was a cache hit
+        unsafe {
+            ffi::pam_set_data(
+                pamh,
+                config::PAM_DATA_CACHED_KEY.as_ptr() as *const c_char,
+                1usize as *mut c_void,
+                noop_cleanup,
+            );
+        }
         Some(PAM_SUCCESS)
     } else {
         if debug {
