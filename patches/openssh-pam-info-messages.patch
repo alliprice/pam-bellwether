@@ -1,0 +1,21 @@
+--- a/auth-pam.c	2026-02-25 18:20:19.929246635 -0600
++++ b/auth-pam.c	2026-02-25 18:23:12.029657027 -0600
+@@ -906,13 +906,11 @@
+ 			/* FALLTHROUGH */
+ 		case PAM_SUCCESS:
+ 			if (**prompts != NULL) {
+-				/* drain any accumulated messages */
+-				debug("PAM: %s", **prompts);
+-				if ((r = sshbuf_put(loginmsg, **prompts,
+-				    strlen(**prompts))) != 0)
+-					fatal("%s: buffer error: %s",
+-					    __func__, ssh_err(r));
+-				free(**prompts);
++				/* Send accumulated info messages to the client
++				 * via the SSH instruction field */
++				debug("PAM: sending info to client: %s", **prompts);
++				free(*info);
++				*info = **prompts;
+ 				**prompts = NULL;
+ 			}
+ 			if (type == PAM_SUCCESS) {

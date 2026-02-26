@@ -1,0 +1,96 @@
+# Lima config for pam-bellwether integration testing on Rocky 9
+#
+# Usage:
+#   limactl create --name=pam-bellwether lima-rocky9.yaml
+#   limactl start pam-bellwether
+#   limactl shell pam-bellwether
+#
+# Inside the VM:
+#   cd /Users/alliprice/code/pam-preauth
+#   cargo build --release
+#   sudo bash tests/integration/pam_test.sh
+
+# Use Rocky 9 aarch64 cloud image
+images:
+  - location: "https://dl.rockylinux.org/pub/rocky/9/images/aarch64/Rocky-9-GenericCloud-Base.latest.aarch64.qcow2"
+    arch: "aarch64"
+  - location: "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
+    arch: "x86_64"
+
+cpus: 2
+memory: "2GiB"
+disk: "20GiB"
+
+# Mount the project directory read-write
+mounts:
+  - location: "/Users/alliprice/code/pam-preauth"
+    writable: true
+
+# Provisioning scripts
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+
+      # Install build dependencies
+      dnf install -y \
+        pam-devel \
+        openssh-server \
+        gcc \
+        make \
+        pkg-config
+
+      # Install EPEL (for google-authenticator, oathtool, expect)
+      dnf install -y epel-release
+      dnf config-manager --set-enabled epel
+      dnf install -y google-authenticator oathtool expect
+
+      # Enable sshd
+      systemctl enable --now sshd
+
+      # Create test user
+      if ! id testuser &>/dev/null; then
+        useradd -m -s /bin/bash testuser
+      fi
+      echo "testuser:testpass" | chpasswd
+
+      # Pre-seed Google Authenticator TOTP secret for testuser
+      # Hardcoded secret — reproducible test VM, not a security concern
+      TOTP_SECRET="JBSWY3DPEHPK3PXP"
+      GA_DIR="/home/testuser"
+      printf '%s\n' \
+        'JBSWY3DPEHPK3PXP' \
+        '" TOTP_AUTH' \
+        '" DISALLOW_REUSE' \
+        > "${GA_DIR}/.google_authenticator"
+      chown testuser:testuser "${GA_DIR}/.google_authenticator"
+      chmod 0400 "${GA_DIR}/.google_authenticator"
+
+      # Create runtime directory for pam-bellwether
+      install -d -m 0700 -o root -g root /run/pam-bellwether
+
+      # tmpfiles.d entry so it persists across reboots
+      echo 'd /run/pam-bellwether 0700 root root -' > /etc/tmpfiles.d/pam-bellwether.conf
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+
+      # Install Rust toolchain
+      if command -v rustup &>/dev/null; then
+        rustup update stable
+      else
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+          | sh -s -- -y --default-toolchain stable
+      fi
+
+      source "$HOME/.cargo/env"
+      echo "Rust: $(rustc --version)"
+      echo "Cargo: $(cargo --version)"
+
+      # Ensure cargo is on PATH for future sessions
+      if ! grep -q 'cargo/env' "$HOME/.bashrc" 2>/dev/null; then
+        echo 'source "$HOME/.cargo/env"' >> "$HOME/.bashrc"
+      fi
