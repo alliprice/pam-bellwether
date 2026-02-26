@@ -5,6 +5,7 @@ pub enum PamHandle {}
 
 // PAM constants
 pub const PAM_SUCCESS: c_int = 0;
+pub const PAM_AUTH_ERR: c_int = 7;
 pub const PAM_IGNORE: c_int = 25;
 pub const PAM_USER: c_int = 2;  // PAM_ITEM for username
 pub const PAM_RHOST: c_int = 4; // PAM_ITEM for remote host

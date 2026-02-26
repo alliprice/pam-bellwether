@@ -3,16 +3,16 @@ use std::os::unix::io::RawFd;
 use std::time::Duration;
 
 use pam_bellwether_common::{config, ffi, flock, log as pam_log, paths, token};
-use ffi::{PamHandle, PAM_IGNORE, PAM_SUCCESS};
+use ffi::{PamHandle, PAM_AUTH_ERR, PAM_IGNORE, PAM_SUCCESS};
 
 unsafe extern "C" fn lock_cleanup(
     _pamh: *mut PamHandle,
     data: *mut c_void,
-    error_status: c_int,
+    _error_status: c_int,
 ) {
     let fd = data as usize as RawFd;
-    if error_status != PAM_SUCCESS {
-        // MFA failed or something else went wrong — apply penalty delay
+    if flock::has_fail_marker(fd) {
+        // MFA failed (stamp never cleared the marker) — penalty delay
         libc::sleep(2);
     }
     flock::release_lock(fd);
@@ -55,7 +55,22 @@ fn gate_inner(
             unsafe { libc::close(fd) };
             return None;
         }
+        // Leader failed — kill this queued connection
+        if flock::has_fail_marker(fd) {
+            pam_log::log_info(&format!(
+                "pam_bellwether: MFA failed in another session, denying {}@{}",
+                user, rhost
+            ));
+            unsafe { ffi::send_info(pamh, "MFA failed in another session") };
+            flock::release_lock(fd);
+            return Some(PAM_AUTH_ERR);
+        }
     }
+
+    // Assume failure — stamp clears this marker on MFA success.
+    // If MFA fails, stamp doesn't run (requisite), so the marker persists
+    // and queued connections see it when they acquire the flock.
+    flock::write_fail_marker(fd);
 
     let rc = unsafe {
         ffi::pam_set_data(

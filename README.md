@@ -21,7 +21,7 @@ The name: a **bellwether** is the lead sheep in a flock — it wears the bell, t
 ## How it works
 
 ```
-auth  [success=1 default=ignore]  pam_bellwether_gate.so timeout=60
+auth  [success=1 ignore=ignore auth_err=die default=ignore]  pam_bellwether_gate.so timeout=60
 auth  requisite                   pam_duo.so    # or any MFA module
 auth  required                    pam_bellwether_stamp.so
 ```

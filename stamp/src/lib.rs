@@ -63,7 +63,11 @@ fn stamp_inner(pamh: *mut ffi::PamHandle, argc: c_int, argv: *const *const c_cha
         pam_log::log_info("pam_bellwether stamp: missing user or rhost, cannot touch token");
     }
 
-    // Step 4: always unlock the fd (gate's cleanup closes it at pam_end time).
+    // Step 4: clear the failure marker — MFA succeeded (stamp only runs on success
+    // because pam_duo.so is requisite). Queued connections will see no marker.
+    flock::clear_fail_marker(fd);
+
+    // Step 5: unlock the fd (gate's cleanup closes it at pam_end time).
     flock::unlock(fd);
 }
 

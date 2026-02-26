@@ -66,6 +66,32 @@ pub fn unlock(fd: RawFd) {
     }
 }
 
+/// Write a failure marker ("F") at the start of the lock file.
+/// Used by gate cleanup when MFA fails, so queued connections know to bail.
+pub fn write_fail_marker(fd: RawFd) {
+    unsafe {
+        libc::lseek(fd, 0, libc::SEEK_SET);
+        libc::write(fd, b"F".as_ptr() as *const libc::c_void, 1);
+    }
+}
+
+/// Check if the lock file contains a failure marker.
+pub fn has_fail_marker(fd: RawFd) -> bool {
+    unsafe {
+        libc::lseek(fd, 0, libc::SEEK_SET);
+        let mut buf = [0u8; 1];
+        let n = libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, 1);
+        n == 1 && buf[0] == b'F'
+    }
+}
+
+/// Clear any failure marker by truncating the lock file.
+pub fn clear_fail_marker(fd: RawFd) {
+    unsafe {
+        libc::ftruncate(fd, 0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -201,7 +201,7 @@ echo "Writing test PAM config..."
 cat > /etc/pam.d/sshd <<'PAM_EOF'
 # Test PAM stack — pam_google_authenticator.so stands in for pam_duo.so
 # TTL is 5 seconds for fast testing.
-auth  [success=1 ignore=ignore default=ignore]  pam_bellwether_gate.so timeout=5 debug
+auth  [success=1 ignore=ignore auth_err=die default=ignore]  pam_bellwether_gate.so timeout=5 debug
 auth  requisite                                  pam_google_authenticator.so
 auth  required                                   pam_bellwether_stamp.so debug
 account required pam_permit.so
