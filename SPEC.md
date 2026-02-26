@@ -106,6 +106,16 @@ The patch in `patches/openssh-pam-info-messages.patch` changes how OpenSSH deliv
 
 This is a deliberate protocol-correctness tradeoff, not a vulnerability. Without the patch, bellwether's "Waiting for MFA..." and "MFA cached" status messages never reach the SSH client.
 
+## Failure Propagation
+
+When the leader connection fails MFA, all connections queued behind the flock are denied immediately — they do not get their own MFA prompt. This treats concurrent connections as a single authentication attempt.
+
+**Mechanism:** Gate writes a single-byte failure marker ("F") to the lock file when acquiring the flock. This is an "assume failure" approach — the marker persists unless explicitly cleared. Stamp clears it on MFA success. Since the MFA module is `requisite`, stamp only runs when MFA succeeds. If MFA fails, stamp never runs, the marker persists, and queued connections see it when they acquire the flock.
+
+When a queued connection wakes up from `block_lock` and finds the marker, gate returns `PAM_AUTH_ERR`. The `auth_err=die` control action on the gate line terminates the PAM stack immediately — the follower never reaches the MFA module.
+
+The penalty delay in `lock_cleanup` (2 seconds if the marker is still present) ensures the lock is held briefly after failure, giving queued connections time to wake up and read the marker before a new authentication attempt can overwrite it.
+
 ## Error Handling — Fail Secure
 
 **Invariant: the only path to `PAM_SUCCESS` is a verified-fresh token with a valid flock held.** Every error condition must resolve to "do MFA." The module is an optimization — if it breaks, the worst case is MFA prompts every time, never MFA prompts never.
@@ -147,4 +157,4 @@ Workspace with two crates: `gate/` and `stamp/`, plus a shared `common/` crate f
 
 - **TTL**: PAM stack arg only (`timeout=60`). No per-user config file.
 - **Boot setup**: Include a `tmpfiles.d` entry to create `/run/pam-bellwether/` with correct permissions.
-- **Failed MFA**: Brief penalty delay (2 seconds) before releasing the lock. Slows brute force and gives the MFA provider time to settle before the next queued connection tries.
+- **Failed MFA**: Queued connections are denied immediately (failure propagation). A 2-second penalty delay holds the lock after failure, slowing brute force and ensuring followers see the marker before it can be overwritten by a retry.
