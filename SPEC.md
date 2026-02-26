@@ -96,6 +96,16 @@ Bellwether is a net increase in security because it drives MFA adoption. MFA tha
 
 These modules assume `PAM_RHOST` is a network-verified source address, which is true when the consumer is OpenSSH. Do not use these modules in PAM stacks where `PAM_RHOST` is set from client-controlled data (e.g., HTTP `X-Forwarded-For`), as the cache would be spoofable.
 
+### OpenSSH Patch Scope
+
+The patch in `patches/openssh-pam-info-messages.patch` changes how OpenSSH delivers PAM `PAM_TEXT_INFO` messages — forwarding them via the SSH keyboard-interactive instruction field instead of deferring them to the post-auth login banner. This is plausibly the correct semantic channel per the SSH protocol, but it's a behavior change with broader scope than bellwether alone:
+
+- **Scope**: affects all `PAM_TEXT_INFO` messages on the keyboard-interactive auth path, not just messages from bellwether. Any PAM module that emits info messages will have them delivered during auth instead of after.
+- **Deployment assumption**: intended for managed hosts where you control the PAM stack and client expectations. On a controlled fleet where you own sshd, the PAM module list, and the clients connecting to it, the risk is low.
+- **Compatibility**: auth UX and logging may differ from stock OpenSSH. Informational messages that were previously post-auth/login-banner scoped will now appear during the authentication conversation.
+
+This is a deliberate protocol-correctness tradeoff, not a vulnerability. Without the patch, bellwether's "Waiting for MFA..." and "MFA cached" status messages never reach the SSH client.
+
 ## Error Handling — Fail Secure
 
 **Invariant: the only path to `PAM_SUCCESS` is a verified-fresh token with a valid flock held.** Every error condition must resolve to "do MFA." The module is an optimization — if it breaks, the worst case is MFA prompts every time, never MFA prompts never.
