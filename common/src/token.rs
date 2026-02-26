@@ -29,7 +29,7 @@ unsafe fn do_touch(fd: c_int) -> bool {
 }
 
 /// Check if token file exists and its mtime is within `ttl` of current time.
-/// Returns false on any error (fail-secure: treat as stale → do Duo).
+/// Returns false on any error (fail-secure: treat as stale → do MFA).
 /// Also rejects future mtime.
 pub fn token_is_fresh(path: &Path, ttl: Duration) -> bool {
     let c_path = match CString::new(path.to_str().unwrap_or("")) {

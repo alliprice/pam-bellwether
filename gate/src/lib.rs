@@ -12,7 +12,7 @@ unsafe extern "C" fn lock_cleanup(
 ) {
     let fd = data as usize as RawFd;
     if error_status != PAM_SUCCESS {
-        // Duo failed or something else went wrong — apply penalty delay
+        // MFA failed or something else went wrong — apply penalty delay
         libc::sleep(2);
     }
     flock::release_lock(fd);
@@ -72,7 +72,7 @@ fn gate_inner(
 
     if token::token_is_fresh(&token_path, ttl) {
         pam_log::log_info(&format!(
-            "pam_bellwether: cache hit for {}@{}, skipping Duo",
+            "pam_bellwether: cache hit for {}@{}, skipping MFA",
             user, rhost
         ));
         unsafe { ffi::send_info(pamh, "MFA cached") };
@@ -89,7 +89,7 @@ fn gate_inner(
     } else {
         if debug {
             pam_log::log_debug(&format!(
-                "pam_bellwether: cache miss for {}@{}, falling through to Duo",
+                "pam_bellwether: cache miss for {}@{}, falling through to MFA",
                 user, rhost
             ));
         }

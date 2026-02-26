@@ -75,7 +75,7 @@ pub extern "C" fn pam_sm_authenticate(
     argv: *const *const c_char,
 ) -> c_int {
     stamp_inner(pamh, argc, argv);
-    // Always return PAM_SUCCESS — Duo already succeeded; stamp failure just
+    // Always return PAM_SUCCESS — MFA already succeeded; stamp failure just
     // means the cache won't be refreshed, but the user IS authenticated.
     ffi::PAM_SUCCESS
 }
