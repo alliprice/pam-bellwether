@@ -24,8 +24,9 @@ SSH_OPTS+=" -o PubkeyAuthentication=no -o PreferredAuthentications=keyboard-inte
 expect -c "
     log_user 0
     set timeout 30
+    set label {${LABEL}}
     spawn ssh $SSH_OPTS -p $SSH_PORT testuser@127.0.0.1 {echo CONNECTED}
-    send_user \"${LABEL}Connecting...\n\"
+    send_user \"\${label}Connecting...\n\"
     expect -re \"Warning:.*\n\" {}
     log_user 1
     expect {
