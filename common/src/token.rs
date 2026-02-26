@@ -1,4 +1,4 @@
-use libc::{self, c_int, c_uint, O_CREAT, O_WRONLY};
+use libc::{self, c_int, c_uint, O_CREAT, O_NOFOLLOW, O_RDONLY, O_WRONLY, S_IFREG, S_IFMT};
 use std::ffi::CString;
 use std::path::Path;
 use std::time::Duration;
@@ -37,10 +37,22 @@ pub fn token_is_fresh(path: &Path, ttl: Duration) -> bool {
         Err(_) => return false,
     };
     unsafe {
-        let mut st: libc::stat = std::mem::zeroed();
-        if libc::stat(c_path.as_ptr(), &mut st) != 0 {
+        let fd = libc::open(c_path.as_ptr(), O_RDONLY | O_NOFOLLOW);
+        if fd < 0 {
             return false;
         }
+        let mut st: libc::stat = std::mem::zeroed();
+        if libc::fstat(fd, &mut st) != 0 {
+            libc::close(fd);
+            return false;
+        }
+        libc::close(fd);
+
+        // Reject non-regular files (symlinks, devices, etc.)
+        if (st.st_mode & S_IFMT) != S_IFREG {
+            return false;
+        }
+
         let mut now: libc::timespec = std::mem::zeroed();
         if libc::clock_gettime(libc::CLOCK_REALTIME, &mut now) != 0 {
             return false;
@@ -66,8 +78,14 @@ pub fn touch_token(path: &Path) -> bool {
         Err(_) => return false,
     };
     unsafe {
-        let fd = libc::open(c_path.as_ptr(), O_CREAT | O_WRONLY, 0o600 as c_uint);
+        let fd = libc::open(c_path.as_ptr(), O_CREAT | O_WRONLY | O_NOFOLLOW, 0o600 as c_uint);
         if fd < 0 {
+            return false;
+        }
+        // Verify we opened a regular file
+        let mut st: libc::stat = std::mem::zeroed();
+        if libc::fstat(fd, &mut st) != 0 || (st.st_mode & S_IFMT) != S_IFREG {
+            libc::close(fd);
             return false;
         }
         let result = do_touch(fd);

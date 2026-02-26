@@ -1,4 +1,4 @@
-use libc::{self, c_uint, LOCK_EX, LOCK_NB, LOCK_UN, O_CREAT, O_RDWR};
+use libc::{self, c_uint, LOCK_EX, LOCK_NB, LOCK_UN, O_CREAT, O_NOFOLLOW, O_RDWR};
 use std::ffi::CString;
 use std::os::unix::io::RawFd;
 use std::path::Path;
@@ -7,7 +7,7 @@ use std::path::Path;
 /// Returns the fd on success, None on any error.
 pub fn acquire_lock(path: &Path) -> Option<RawFd> {
     let c_path = CString::new(path.to_str()?).ok()?;
-    let fd = unsafe { libc::open(c_path.as_ptr(), O_CREAT | O_RDWR, 0o600 as c_uint) };
+    let fd = unsafe { libc::open(c_path.as_ptr(), O_CREAT | O_RDWR | O_NOFOLLOW, 0o600 as c_uint) };
     if fd < 0 {
         return None;
     }
@@ -23,7 +23,7 @@ pub fn acquire_lock(path: &Path) -> Option<RawFd> {
 /// Returns the fd on success, None on any error.
 pub fn open_lock(path: &Path) -> Option<RawFd> {
     let c_path = CString::new(path.to_str()?).ok()?;
-    let fd = unsafe { libc::open(c_path.as_ptr(), O_CREAT | O_RDWR, 0o600 as c_uint) };
+    let fd = unsafe { libc::open(c_path.as_ptr(), O_CREAT | O_RDWR | O_NOFOLLOW, 0o600 as c_uint) };
     if fd < 0 {
         return None;
     }
