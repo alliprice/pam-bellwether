@@ -43,6 +43,23 @@ fn gate_inner(
     let lock_path = paths::lock_path(&user, &rhost)?;
     let token_path = paths::token_path(&user, &rhost)?;
 
+    // If sshd is retrying authentication (MaxAuthTries > 1), the previous
+    // gate_inner call left a lock fd in pam_data with an active flock.
+    // Release that flock before acquiring a new one to prevent self-deadlock.
+    // The old fd stays open — pam_set_data below triggers lock_cleanup to close it.
+    let mut old_data: *const c_void = std::ptr::null();
+    let old_rc = unsafe {
+        ffi::pam_get_data(
+            pamh as *const ffi::PamHandle,
+            config::PAM_DATA_KEY.as_ptr() as *const c_char,
+            &mut old_data,
+        )
+    };
+    if old_rc == PAM_SUCCESS && !old_data.is_null() {
+        let old_fd = old_data as usize as RawFd;
+        flock::unlock(old_fd);
+    }
+
     let fd = flock::open_lock(&lock_path)?;
     let immediate = flock::try_lock(fd)?;
     if !immediate {
