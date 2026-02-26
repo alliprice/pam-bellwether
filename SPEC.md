@@ -70,6 +70,24 @@ If the gate returns `PAM_SUCCESS`, the `success=1` action skips exactly one modu
 - Reboot clears all tokens (tmpfs)
 - Does not bypass Duo for new source IPs even if user recently authed elsewhere
 
+### Trust Assumptions
+
+The cache trusts the same things SSH already trusts:
+
+- **`PAM_RHOST` (source IP)**: Set by OpenSSH from the TCP peer address. Spoofing this requires hijacking a full TCP + SSH handshake, not just a SYN — the same bar SSH itself relies on for `AllowUsers user@host`, `Match Address`, and TCP wrappers. Bellwether does not lower this bar.
+
+- **`PAM_USER` (username)**: Set by OpenSSH from the client's auth request. An attacker exploiting the cache would need the user's private key (or password), access from the same source IP, and would need to connect within the TTL window. At that point the cache is irrelevant — the attacker already authenticated and has a live SSH session from the first connection.
+
+- **Token file integrity**: Only root can write to `/run/pam-bellwether/`. An authenticated unprivileged user cannot forge tokens. A user with root access can already do anything.
+
+### What the TTL Window Actually Risks
+
+During the TTL window (default 60s), the second factor is not rechecked for the same user+IP. This is functionally equivalent to Duo's own session caching, but at the PAM layer. The attack scenario — stolen private key, same source IP, within the TTL — implies the attacker already has everything needed to open their own fully-authenticated session. The cache grants no access beyond what the attacker already obtained.
+
+### Scope Limitation
+
+These modules assume `PAM_RHOST` is a network-verified source address, which is true when the consumer is OpenSSH. Do not use these modules in PAM stacks where `PAM_RHOST` is set from client-controlled data (e.g., HTTP `X-Forwarded-For`), as the cache would be spoofable.
+
 ## Error Handling — Fail Secure
 
 **Invariant: the only path to `PAM_SUCCESS` is a verified-fresh token with a valid flock held.** Every error condition must resolve to "do Duo." The module is an optimization — if it breaks, the worst case is Duo prompts every time, never Duo prompts never.
