@@ -40,8 +40,8 @@ fn gate_inner(
     let user = unsafe { ffi::get_pam_item(pamh, ffi::PAM_USER) }?;
     let rhost = unsafe { ffi::get_pam_item(pamh, ffi::PAM_RHOST) }?;
 
-    let lock_path = paths::lock_path(user, rhost)?;
-    let token_path = paths::token_path(user, rhost)?;
+    let lock_path = paths::lock_path(&user, &rhost)?;
+    let token_path = paths::token_path(&user, &rhost)?;
 
     let fd = flock::open_lock(&lock_path)?;
     let immediate = flock::try_lock(fd)?;

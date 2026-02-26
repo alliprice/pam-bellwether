@@ -11,7 +11,7 @@ pub const PAM_DATA_CACHED_KEY: &[u8] = b"pam_bellwether_cached\0";
 ///
 /// # Safety
 /// argv must point to argc valid C string pointers.
-pub unsafe fn parse_args(argc: c_int, argv: *const *const c_char) -> Vec<&'static str> {
+pub unsafe fn parse_args(argc: c_int, argv: *const *const c_char) -> Vec<String> {
     let mut args = Vec::new();
     for i in 0..argc as isize {
         let ptr = *argv.offset(i);
@@ -19,16 +19,16 @@ pub unsafe fn parse_args(argc: c_int, argv: *const *const c_char) -> Vec<&'stati
             continue;
         }
         if let Ok(s) = CStr::from_ptr(ptr).to_str() {
-            args.push(s);
+            args.push(s.to_owned());
         }
     }
     args
 }
 
 /// Extract timeout=N from args, returning the TTL as a Duration.
-pub fn parse_ttl(args: &[&str]) -> Duration {
+pub fn parse_ttl<S: AsRef<str>>(args: &[S]) -> Duration {
     for arg in args {
-        if let Some(val) = arg.strip_prefix("timeout=") {
+        if let Some(val) = arg.as_ref().strip_prefix("timeout=") {
             if let Ok(secs) = val.parse::<u64>() {
                 if secs > 0 {
                     return Duration::from_secs(secs);
@@ -40,8 +40,8 @@ pub fn parse_ttl(args: &[&str]) -> Duration {
 }
 
 /// Check if "debug" is present in the PAM args.
-pub fn has_debug(args: &[&str]) -> bool {
-    args.iter().any(|&a| a == "debug")
+pub fn has_debug<S: AsRef<str>>(args: &[S]) -> bool {
+    args.iter().any(|a| a.as_ref() == "debug")
 }
 
 #[cfg(test)]
@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn test_parse_ttl_default_on_empty_args() {
-        assert_eq!(parse_ttl(&[]), DEFAULT_TTL);
+        assert_eq!(parse_ttl::<&str>(&[]), DEFAULT_TTL);
     }
 
     #[test]
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_has_debug_empty() {
-        assert_eq!(has_debug(&[]), false);
+        assert_eq!(has_debug::<&str>(&[]), false);
     }
 
     #[test]

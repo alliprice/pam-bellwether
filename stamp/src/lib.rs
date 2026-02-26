@@ -32,7 +32,7 @@ fn stamp_inner(pamh: *mut ffi::PamHandle, argc: c_int, argv: *const *const c_cha
 
     // Step 3: if we have both user and rhost, derive the token path and touch it.
     if let (Some(user), Some(rhost)) = (user_opt, rhost_opt) {
-        if let Some(path) = paths::token_path(user, rhost) {
+        if let Some(path) = paths::token_path(&user, &rhost) {
             if !token::touch_token(&path) {
                 pam_log::log_info("pam_bellwether stamp: failed to touch token file");
             } else {

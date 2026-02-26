@@ -72,14 +72,14 @@ pub struct PamConv {
 ///
 /// # Safety
 /// pamh must be a valid PAM handle from a PAM callback
-pub unsafe fn get_pam_item(pamh: *mut PamHandle, item_type: c_int) -> Option<&'static str> {
+pub unsafe fn get_pam_item(pamh: *mut PamHandle, item_type: c_int) -> Option<String> {
     let mut item: *const c_void = std::ptr::null();
     let rc = pam_get_item(pamh, item_type, &mut item);
     if rc != PAM_SUCCESS || item.is_null() {
         return None;
     }
     let cstr = std::ffi::CStr::from_ptr(item as *const c_char);
-    cstr.to_str().ok()
+    cstr.to_str().ok().map(String::from)
 }
 
 /// Send a PAM_TEXT_INFO message to the user via the PAM conversation function.
