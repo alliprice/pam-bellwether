@@ -6,6 +6,8 @@ PAM modules for Ansible-safe Duo MFA on a Rocky 9 bastion host.
 
 When Ansible opens 50+ parallel SSH connections to a bastion with Duo MFA, every connection simultaneously triggers a Duo push before the user can approve any of them. The user gets flooded, can't respond in time, and gets locked out.
 
+The practical result: teams disable MFA on the bastion. The theoretical security of per-connection Duo prompts is irrelevant if people turn it off. The real comparison isn't "bellwether vs. perfect MFA" — it's "bellwether vs. no MFA because someone got fed up."
+
 ## Solution
 
 Serialize concurrent auth attempts per user+IP using a flock, then cache a successful Duo auth for a configurable window. The first connection through triggers exactly one Duo push. All queued connections behind it see the cache and skip Duo entirely.
@@ -83,6 +85,10 @@ The cache trusts the same things SSH already trusts:
 ### What the TTL Window Actually Risks
 
 During the TTL window (default 60s), the second factor is not rechecked for the same user+IP. This is functionally equivalent to Duo's own session caching, but at the PAM layer. The attack scenario — stolen private key, same source IP, within the TTL — implies the attacker already has everything needed to open their own fully-authenticated session. The cache grants no access beyond what the attacker already obtained.
+
+### Net Security Effect
+
+Bellwether is a net increase in security because it drives MFA adoption. MFA that punishes automation gets disabled — a team that gets 50 Duo pushes per Ansible run will find a way to turn MFA off on that bastion, and then they have zero second factor. A 60-second cache window with MFA enforced is strictly better than no MFA at all. Making MFA invisible for automation keeps the security policy in place.
 
 ### Scope Limitation
 
