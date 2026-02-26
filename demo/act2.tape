@@ -9,7 +9,7 @@ Set Height 800
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 10ms
 
-Type "# --- Act 2: 6 connections at once (the Ansible moment) ---"
+Type "# --- Act 2: 6 connections at once (the automation moment) ---"
 Enter
 Sleep 1s
 Set TypingSpeed 50ms

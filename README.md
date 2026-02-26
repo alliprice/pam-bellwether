@@ -1,10 +1,10 @@
 # pam-bellwether
 
-MFA is good security. But when Ansible opens 50 connections to a bastion and each one triggers a separate MFA prompt, people disable MFA. That's a net loss.
+MFA is good security. But when automation opens 50 connections to a bastion and each one triggers a separate MFA prompt, people disable MFA. That's a net loss.
 
 **Bellwether fixes this.** One connection does MFA. The rest of the flock follows.
 
-Two small Rust PAM modules bracket your MFA module (e.g., `pam_duo.so`) in the auth stack. The first SSH connection for a given user+IP acquires a `flock(2)`, does MFA normally, and stamps a token. Every connection queued behind it sees the stamp and skips MFA. One prompt, one approve, done. Ansible runs clean.
+Two small Rust PAM modules bracket your MFA module (e.g., `pam_duo.so`) in the auth stack. The first SSH connection for a given user+IP acquires a `flock(2)`, does MFA normally, and stamps a token. Every connection queued behind it sees the stamp and skips MFA. One prompt, one approve, done. Automation runs clean.
 
 The name: a **bellwether** is the lead sheep in a flock — it wears the bell, the others follow. This code literally uses `flock(2)` to serialize the herd.
 
@@ -14,7 +14,7 @@ The name: a **bellwether** is the lead sheep in a flock — it wears the bell, t
 
 ![Act 1: cold cache then warm cache](demo/pam-bellwether-demo.gif)
 
-**Act 2** — Six connections at once (the Ansible moment). One MFA prompt. Five queue behind the flock, served from cache.
+**Act 2** — Six connections at once. One MFA prompt. Five queue behind the flock, served from cache.
 
 ![Act 2: 6 concurrent connections](demo/act2.gif)
 
@@ -41,9 +41,9 @@ sudo cp target/release/libpam_bellwether_*.so /usr/lib64/security/
 
 ## Why this matters
 
-MFA adoption fails when it punishes automation. A team running Ansible against an MFA-protected bastion will either:
+MFA adoption fails when it punishes automation. A team running parallel SSH against an MFA-protected bastion will either:
 
-1. Get flooded with 50 MFA prompts per playbook run
+1. Get flooded with 50 MFA prompts per run
 2. Disable MFA on the bastion
 3. Route around the bastion entirely
 

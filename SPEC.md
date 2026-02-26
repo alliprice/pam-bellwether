@@ -1,10 +1,10 @@
 # pam-bellwether
 
-PAM modules for Ansible-safe MFA on a Rocky 9 bastion host.
+PAM modules for automation-safe MFA on a Rocky 9 bastion host.
 
 ## Problem
 
-When Ansible opens 50+ parallel SSH connections to a bastion with MFA, every connection simultaneously triggers an MFA prompt before the user can approve any of them. The user gets flooded, can't respond in time, and gets locked out.
+When automation opens 50+ parallel SSH connections to a bastion with MFA, every connection simultaneously triggers an MFA prompt before the user can approve any of them. The user gets flooded, can't respond in time, and gets locked out.
 
 The practical result: teams disable MFA on the bastion. The theoretical security of per-connection MFA prompts is irrelevant if people turn it off. The real comparison isn't "bellwether vs. perfect MFA" — it's "bellwether vs. no MFA because someone got fed up."
 
@@ -90,7 +90,7 @@ During the TTL window (default 60s), the second factor is not rechecked for the 
 
 ### Net Security Effect
 
-Bellwether is a net increase in security because it drives MFA adoption. MFA that punishes automation gets disabled — a team that gets 50 MFA prompts per Ansible run will find a way to turn MFA off on that bastion, and then they have zero second factor. A 60-second cache window with MFA enforced is strictly better than no MFA at all. Making MFA invisible for automation keeps the security policy in place.
+Bellwether is a net increase in security because it drives MFA adoption. MFA that punishes automation gets disabled — a team that gets 50 MFA prompts per playbook run will find a way to turn MFA off on that bastion, and then they have zero second factor. A 60-second cache window with MFA enforced is strictly better than no MFA at all. Making MFA invisible for automation keeps the security policy in place.
 
 ### Scope Limitation
 

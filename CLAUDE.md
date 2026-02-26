@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Two Rust PAM modules (`pam_bellwether_gate.so` and `pam_bellwether_stamp.so`) that serialize concurrent SSH auth attempts per user+IP and cache successful MFA for a configurable TTL. Solves the problem of Ansible's 50+ parallel connections each triggering a separate MFA prompt on a Rocky 9 bastion host.
+Two Rust PAM modules (`pam_bellwether_gate.so` and `pam_bellwether_stamp.so`) that serialize concurrent SSH auth attempts per user+IP and cache successful MFA for a configurable TTL. Solves the problem of automation tools opening 50+ parallel connections, each triggering a separate MFA prompt on a Rocky 9 bastion host.
 
 ## Build
 

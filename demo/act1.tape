@@ -22,7 +22,7 @@ Show
 # Title card
 Type "# pam-bellwether: serialize and cache SSH MFA"
 Enter
-Type "# When Ansible opens 50 connections, only the 1st triggers MFA."
+Type "# When automation opens 50 connections, only the 1st triggers MFA."
 Enter
 Type "# The rest queue behind a lock, then use the cached result."
 Enter
