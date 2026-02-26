@@ -8,6 +8,16 @@ Two small Rust PAM modules bracket your MFA module (e.g., `pam_duo.so`) in the a
 
 The name: a **bellwether** is the lead sheep in a flock — it wears the bell, the others follow. This code literally uses `flock(2)` to serialize the herd.
 
+## Demo
+
+**Act 1** — First connection does MFA. Second connection hits the cache and skips it.
+
+![Act 1: cold cache then warm cache](demo/pam-bellwether-demo.gif)
+
+**Act 2** — Six connections at once (the Ansible moment). One MFA prompt. Five queue behind the flock, served from cache.
+
+![Act 2: 6 concurrent connections](demo/act2.gif)
+
 ## How it works
 
 ```
