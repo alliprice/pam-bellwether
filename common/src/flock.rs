@@ -1,7 +1,14 @@
-use libc::{self, c_uint, LOCK_EX, LOCK_NB, LOCK_UN, O_CREAT, O_NOFOLLOW, O_RDWR};
+use libc::{self, c_uint, LOCK_EX, LOCK_NB, LOCK_UN, O_CREAT, O_NOFOLLOW, O_RDWR, S_IFREG, S_IFMT};
 use std::ffi::CString;
 use std::os::unix::io::RawFd;
 use std::path::Path;
+
+/// Verify that an open fd refers to a regular file. Rejects symlinks,
+/// devices, FIFOs, etc. as defense-in-depth under the root-owned runtime dir.
+unsafe fn is_regular_file(fd: RawFd) -> bool {
+    let mut st: libc::stat = std::mem::zeroed();
+    libc::fstat(fd, &mut st) == 0 && (st.st_mode & S_IFMT) == S_IFREG
+}
 
 /// Open the lock file and acquire an exclusive blocking flock.
 /// Returns the fd on success, None on any error.
@@ -9,6 +16,10 @@ pub fn acquire_lock(path: &Path) -> Option<RawFd> {
     let c_path = CString::new(path.to_str()?).ok()?;
     let fd = unsafe { libc::open(c_path.as_ptr(), O_CREAT | O_RDWR | O_NOFOLLOW, 0o600 as c_uint) };
     if fd < 0 {
+        return None;
+    }
+    if !unsafe { is_regular_file(fd) } {
+        unsafe { libc::close(fd) };
         return None;
     }
     let rc = unsafe { libc::flock(fd, LOCK_EX) };
@@ -25,6 +36,10 @@ pub fn open_lock(path: &Path) -> Option<RawFd> {
     let c_path = CString::new(path.to_str()?).ok()?;
     let fd = unsafe { libc::open(c_path.as_ptr(), O_CREAT | O_RDWR | O_NOFOLLOW, 0o600 as c_uint) };
     if fd < 0 {
+        return None;
+    }
+    if !unsafe { is_regular_file(fd) } {
+        unsafe { libc::close(fd) };
         return None;
     }
     Some(fd)
