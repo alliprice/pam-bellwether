@@ -207,14 +207,14 @@ If pam_duo fails in session, the entire approach needs rethinking. If it works, 
 
 **Do not substitute pam_google_authenticator for this testing.** Google Authenticator prompts for a verification code, which requires the conversation function to deliver the prompt AND receive the response. pam_duo with autopush is fundamentally different - it sends a push notification server-side and the "prompt" is vestigial. The Phase 0 test specifically needs to determine whether pam_duo's autopush mode works without a functional conversation (or with a degraded one). Only real pam_duo with autopush answers this question.
 
-We have a Duo test application set up for exactly this purpose. These are test-only credentials (not production):
+We have a Duo test application set up for exactly this purpose. Credentials are stored in `tests/integration/.env` (gitignored):
 
 ```
 # /etc/duo/pam_duo.conf
 [duo]
-ikey = REDACTED_DUO_IKEY
-skey = REDACTED_DUO_SKEY
-host = REDACTED_DUO_HOST
+ikey = <from .env>
+skey = <from .env>
+host = <from .env>
 failmode = safe
 pushinfo = yes
 autopush = yes

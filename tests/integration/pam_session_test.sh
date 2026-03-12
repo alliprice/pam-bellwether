@@ -920,15 +920,25 @@ if [[ "$RUN_PHASE3" == "true" ]]; then
             chmod 600 /home/l-aprice/.ssh/authorized_keys
         fi
 
+        # Load real Duo credentials from .env (not checked into version control)
+        DUO_ENV="${SCRIPT_DIR}/.env"
+        if [[ ! -f "$DUO_ENV" ]]; then
+            echo "ERROR: ${DUO_ENV} not found. Copy .env.example and fill in real Duo credentials." >&2
+            echo "Skipping Phase 3." >&2
+        elif ! source "$DUO_ENV" || [[ -z "${DUO_IKEY:-}" || -z "${DUO_SKEY:-}" || -z "${DUO_HOST:-}" ]]; then
+            echo "ERROR: DUO_IKEY, DUO_SKEY, and DUO_HOST must all be set in ${DUO_ENV}" >&2
+            echo "Skipping Phase 3." >&2
+        else
+
         # Write Duo config - failmode=secure so a Duo API failure denies
         # access instead of silently passing. This ensures tests actually
         # exercise the Duo push flow.
         mkdir -p /etc/duo
-        cat > /etc/duo/pam_duo.conf <<'DUO_EOF'
+        cat > /etc/duo/pam_duo.conf <<DUO_EOF
 [duo]
-ikey = REDACTED_DUO_IKEY
-skey = REDACTED_DUO_SKEY
-host = REDACTED_DUO_HOST
+ikey = ${DUO_IKEY}
+skey = ${DUO_SKEY}
+host = ${DUO_HOST}
 failmode = secure
 pushinfo = yes
 autopush = yes
@@ -1284,7 +1294,8 @@ PAM_COMBINED_DUO_EOF
         fi
 
         echo ""
-    fi
-fi
+        fi  # DUO_ENV loaded
+    fi  # pam_duo.so exists
+fi  # RUN_PHASE3
 
 # cleanup is called via trap EXIT
