@@ -105,6 +105,7 @@ cleanup() {
     rm -f /tmp/bellwether-mfa-fail
     rm -f /tmp/duo-test-marker.*
     rm -f /tmp/mock_duo_deny
+    semanage port -d -t http_port_t -p tcp 18443 2>/dev/null || true
     rm -f /usr/local/bin/bellwether_mfa_stub.sh
     echo "Removed test token/lock files, fail trigger, and MFA stub"
 
@@ -596,6 +597,11 @@ MOCK_EOF
     MOCK_DUO_PID=$!
     sleep 1
 
+    # Label mock Duo port so SELinux allows sshd_t to connect
+    # (pam_duo_permit_sshd boolean grants sshd_t -> http_port_t)
+    semanage port -a -t http_port_t -p tcp $MOCK_DUO_PORT 2>/dev/null || \
+        semanage port -m -t http_port_t -p tcp $MOCK_DUO_PORT 2>/dev/null || true
+
     # Write Duo config pointing to mock server
     mkdir -p /etc/bellwether
     cat > /etc/bellwether/duo.conf <<DUO_CONF_EOF
@@ -697,8 +703,10 @@ PAM_COMBINED_EOF
         fail "C5: token file exists after Duo deny (should not have been created)"
     fi
 
-    # Remove deny marker
+    # Remove deny marker and clean lock state (penalty delay leaves stale flock)
     rm -f /tmp/mock_duo_deny
+    sleep 3
+    rm -f /run/pam-bellwether/testuser_*.token /run/pam-bellwether/testuser_*.lock
 
     # Verify recovery
     RESULT_RECOVERY=$(ssh_noninteractive whoami 2>&1) || true
