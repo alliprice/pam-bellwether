@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pam-bellwether-common = { path = "../common" }
 libc = "0.2"
-ureq = { version = "2", default-features = false, features = ["tls"] }
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 hmac = "0.12"
 sha1 = "0.10"
 serde = { version = "1", features = ["derive"] }
