@@ -28,8 +28,13 @@ Two small Rust PAM modules compiled to `.so`:
 
 ### `pam_bellwether_gate.so`
 
-Runs before your MFA module (e.g., `pam_duo.so`) in the PAM stack.
+Runs before your MFA module (e.g., `pam_duo.so`) in the PAM stack. Exports both auth and session entry points:
 
+- `pam_sm_authenticate` - auth-phase entry point (keyboard-interactive deployments)
+- `pam_sm_open_session` - session-phase entry point (pubkey-only deployments)
+- `pam_sm_setcred` / `pam_sm_close_session` - stubs returning `PAM_IGNORE`
+
+Internal logic (shared by both entry points):
 - Gets `PAM_USER` and `PAM_RHOST` from the PAM handle
 - Derives lock path: `/run/pam-bellwether/<user>_<ip>.lock`
 - Acquires an exclusive flock (blocking) — concurrent connections queue here
@@ -38,10 +43,16 @@ Runs before your MFA module (e.g., `pam_duo.so`) in the PAM stack.
 - Stale → return `PAM_IGNORE` (fall through to MFA module)
 - Passes lock fd to stamp module via `pam_set_data`
 
+The session entry point maps `PAM_AUTH_ERR` to `PAM_SESSION_ERR` so the session-phase PAM stack can use `session_err=die` instead of `auth_err=die`.
+
 ### `pam_bellwether_stamp.so`
 
-Runs after your MFA module in the PAM stack (only reached on MFA success).
+Runs after your MFA module in the PAM stack (only reached on MFA success). Exports both auth and session entry points:
 
+- `pam_sm_authenticate` / `pam_sm_open_session` - both call the same internal logic
+- `pam_sm_setcred` / `pam_sm_close_session` - stubs returning `PAM_SUCCESS`
+
+Internal logic:
 - Retrieves lock fd from `pam_get_data`
 - Touches `/run/pam-bellwether/<user>_<ip>.token`
 - Releases flock
@@ -152,6 +163,50 @@ sudo cp target/release/libpam_bellwether_*.so /usr/lib64/security/
 ```
 
 Workspace with two crates: `gate/` and `stamp/`, plus a shared `common/` crate for token path logic and flock helpers.
+
+## Session-Phase Deployment
+
+Both modules support two deployment modes from the same `.so` files. The PAM stack configuration determines which phase is used.
+
+### Auth-phase deployment (keyboard-interactive)
+
+The original deployment mode. Requires clients to negotiate keyboard-interactive SSH auth.
+
+```
+# sshd_config
+AuthenticationMethods publickey,keyboard-interactive
+KbdInteractiveAuthentication yes
+UsePAM yes
+
+# /etc/pam.d/sshd
+auth  [success=1 ignore=ignore auth_err=die default=ignore]  pam_bellwether_gate.so timeout=60
+auth  requisite                                     pam_duo.so
+auth  required                                      pam_bellwether_stamp.so
+```
+
+### Session-phase deployment (pubkey-only)
+
+For non-interactive clients (Ansible, automated tools) that cannot negotiate keyboard-interactive. MFA runs in the PAM session phase after pubkey auth succeeds.
+
+```
+# sshd_config
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM yes
+
+# /etc/pam.d/sshd
+auth     required   pam_permit.so
+account  required   pam_permit.so
+session  [success=1 ignore=ignore session_err=die default=ignore]  pam_bellwether_gate.so timeout=60
+session  requisite  pam_duo.so
+session  required   pam_bellwether_stamp.so
+```
+
+Key differences from auth-phase deployment:
+- Uses `session_err=die` instead of `auth_err=die` (gate maps `PAM_AUTH_ERR` to `PAM_SESSION_ERR`)
+- `send_info` messages degrade gracefully - if no PAM conversation function is available (common in session phase), messages are silently skipped and only syslog feedback is available
+- Failure behavior: session denial after auth success shows "Connection closed" to the client, not "Permission denied"
 
 ## Decisions
 

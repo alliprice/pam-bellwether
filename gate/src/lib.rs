@@ -3,7 +3,7 @@ use std::os::unix::io::RawFd;
 use std::time::Duration;
 
 use pam_bellwether_common::{config, ffi, flock, log as pam_log, paths, token};
-use ffi::{PamHandle, PAM_AUTH_ERR, PAM_IGNORE, PAM_SUCCESS};
+use ffi::{PamHandle, PAM_AUTH_ERR, PAM_IGNORE, PAM_SESSION_ERR, PAM_SUCCESS};
 
 unsafe extern "C" fn lock_cleanup(
     _pamh: *mut PamHandle,
@@ -141,6 +141,27 @@ pub extern "C" fn pam_sm_authenticate(
 
 #[no_mangle]
 pub extern "C" fn pam_sm_setcred(
+    _pamh: *mut PamHandle,
+    _flags: c_int,
+    _argc: c_int,
+    _argv: *const *const c_char,
+) -> c_int {
+    PAM_IGNORE
+}
+
+#[no_mangle]
+pub extern "C" fn pam_sm_open_session(
+    pamh: *mut PamHandle,
+    flags: c_int,
+    argc: c_int,
+    argv: *const *const c_char,
+) -> c_int {
+    let rc = gate_inner(pamh, flags, argc, argv).unwrap_or(PAM_IGNORE);
+    if rc == PAM_AUTH_ERR { PAM_SESSION_ERR } else { rc }
+}
+
+#[no_mangle]
+pub extern "C" fn pam_sm_close_session(
     _pamh: *mut PamHandle,
     _flags: c_int,
     _argc: c_int,

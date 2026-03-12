@@ -363,6 +363,16 @@ for so_file in "$GATE_SO" "$STAMP_SO"; do
     else
         fail "$so_name missing pam_sm_setcred symbol"
     fi
+    if echo "$symbols" | grep -q "pam_sm_open_session"; then
+        pass "$so_name exports pam_sm_open_session"
+    else
+        fail "$so_name missing pam_sm_open_session symbol"
+    fi
+    if echo "$symbols" | grep -q "pam_sm_close_session"; then
+        pass "$so_name exports pam_sm_close_session"
+    else
+        fail "$so_name missing pam_sm_close_session symbol"
+    fi
 done
 
 # Check gate links against libpam

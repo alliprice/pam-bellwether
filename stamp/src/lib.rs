@@ -93,3 +93,24 @@ pub extern "C" fn pam_sm_setcred(
 ) -> c_int {
     ffi::PAM_SUCCESS
 }
+
+#[no_mangle]
+pub extern "C" fn pam_sm_open_session(
+    pamh: *mut ffi::PamHandle,
+    _flags: c_int,
+    argc: c_int,
+    argv: *const *const c_char,
+) -> c_int {
+    stamp_inner(pamh, argc, argv);
+    ffi::PAM_SUCCESS
+}
+
+#[no_mangle]
+pub extern "C" fn pam_sm_close_session(
+    _pamh: *mut ffi::PamHandle,
+    _flags: c_int,
+    _argc: c_int,
+    _argv: *const *const c_char,
+) -> c_int {
+    ffi::PAM_SUCCESS
+}
