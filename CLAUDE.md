@@ -39,6 +39,10 @@ Key invariants:
 - TTL is configurable via PAM arg `timeout=N` (default 60s)
 - Failed MFA triggers a 2-second penalty delay before releasing the lock
 
+## Git
+
+This is a public repository. Do not push to origin or create pull requests without explicit permission. Commit locally on branches as usual, but treat pushing as a manual step the user controls.
+
 ## Canonical Spec
 
 `SPEC.md` is the single source of truth for design decisions, security model, and PAM stack integration. Read it before making architectural changes.

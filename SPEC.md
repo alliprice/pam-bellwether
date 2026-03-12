@@ -208,6 +208,101 @@ Key differences from auth-phase deployment:
 - `send_info` messages degrade gracefully - if no PAM conversation function is available (common in session phase), messages are silently skipped and only syslog feedback is available
 - Failure behavior: session denial after auth success shows "Connection closed" to the client, not "Permission denied"
 
+## Combined Module Deployment
+
+For deployments that use Duo as the MFA provider, `pam_bellwether.so` combines the gate, MFA, and stamp logic into a single module by internalizing the Duo Auth API calls. This eliminates the three-module stack (gate + pam_duo + stamp) and removes the external dependency on `pam_duo.so`.
+
+### When to use
+
+Use the combined module when:
+- Your MFA provider is Duo Security
+- You want to reduce the PAM stack to a single module
+- You have control over the Duo integration key and secret key
+
+Continue using the gate/stamp modules when:
+- You use a different MFA provider (Google Authenticator, YubiKey, custom solution, etc.)
+- You want maximum flexibility in the PAM stack
+- You need to layer multiple MFA modules
+
+### PAM stack configuration
+
+Auth-phase deployment:
+
+```
+# sshd_config
+AuthenticationMethods publickey,keyboard-interactive
+KbdInteractiveAuthentication yes
+UsePAM yes
+
+# /etc/pam.d/sshd
+auth  [success=ok auth_err=die default=ignore]  pam_bellwether.so timeout=60 duo_config=/etc/bellwether/duo.conf
+```
+
+Session-phase deployment (pubkey-only, for Ansible and automated tools):
+
+```
+# sshd_config
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM yes
+
+# /etc/pam.d/sshd
+auth     required   pam_permit.so
+account  required   pam_permit.so
+session  [success=ok session_err=die default=ignore]  pam_bellwether.so timeout=60 duo_config=/etc/bellwether/duo.conf
+```
+
+### Duo configuration file
+
+The `duo_config` PAM argument points to a configuration file with the following format:
+
+```
+[duo]
+ikey = DI...
+skey = ...
+host = api-XXXXXXXX.duosecurity.com
+failmode = secure
+```
+
+Required fields:
+- `ikey`: Duo integration key (from Duo Admin Panel)
+- `skey`: Duo secret key (from Duo Admin Panel)
+- `host`: Duo API hostname (e.g., `api-12345678.duosecurity.com`)
+
+Optional fields:
+- `failmode`: Either `secure` (default) or `safe`
+  - `secure`: transient errors (network failures, Duo API 5xx) deny access
+  - `safe`: transient errors allow access (fail open)
+
+The config file must be owned by root and have permissions 0600 or stricter. The module enforces this at runtime.
+
+### Failmode behavior
+
+**Secure mode** (default): All errors deny access. Use this when Duo availability is critical and you want fail-closed behavior.
+
+**Safe mode**: Transient errors (network failures, Duo API 5xx responses) allow access. API errors (bad credentials, HTTP 4xx) still deny. Use this when you want fail-open behavior for network issues but still enforce valid Duo credentials.
+
+Transient errors eligible for failsafe:
+- Network connection failures
+- Duo API HTTP 5xx responses (server errors)
+
+API errors that always deny (never failsafe):
+- Invalid Duo credentials (ikey/skey)
+- HTTP 4xx responses (client errors)
+- User not enrolled in Duo
+- User explicitly denied the push
+
+### Build and install
+
+```bash
+cargo build --release
+# produces: target/release/libpam_bellwether.so
+sudo cp target/release/libpam_bellwether.so /usr/lib64/security/pam_bellwether.so
+```
+
+The combined module is built from the `bellwether/` crate in the workspace.
+
 ## Decisions
 
 - **TTL**: PAM stack arg only (`timeout=60`). No per-user config file.

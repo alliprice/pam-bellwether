@@ -101,7 +101,9 @@ cleanup() {
     echo "Restarted sshd"
 
     rm -f /run/pam-bellwether/testuser_*.token /run/pam-bellwether/testuser_*.lock
+    rm -f /run/pam-bellwether/l-aprice_*.token /run/pam-bellwether/l-aprice_*.lock
     rm -f /tmp/bellwether-mfa-fail
+    rm -f /tmp/duo-test-marker.*
     rm -f /usr/local/bin/bellwether_mfa_stub.sh
     echo "Removed test token/lock files, fail trigger, and MFA stub"
 
@@ -533,6 +535,162 @@ fi
 echo ""
 
 # ===========================================================================
+# Phase 4: Combined module tests (pam_bellwether.so with mock Duo)
+# ===========================================================================
+echo "=== Phase 4: Combined module tests ==="
+echo ""
+
+# Check if combined module was built
+COMBINED_SO="$PROJECT_ROOT/target/release/libpam_bellwether.so"
+if [[ ! -f "$COMBINED_SO" ]]; then
+    echo "SKIP: libpam_bellwether.so not found (bellwether crate not built)"
+else
+    cp "$COMBINED_SO" /usr/lib64/security/pam_bellwether.so
+
+    # Start mock Duo API server
+    MOCK_DUO_PORT=18443
+    MOCK_DUO_SCRIPT=$(mktemp /tmp/mock_duo_XXXXXX.py)
+    cat > "$MOCK_DUO_SCRIPT" <<'MOCK_EOF'
+import http.server, json, sys
+
+class DuoMockHandler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(length).decode() if length > 0 else ''
+
+        if self.path == '/auth/v2/preauth':
+            resp = {"stat": "OK", "response": {"result": "auth", "status_msg": "Account is active"}}
+        elif self.path == '/auth/v2/auth':
+            resp = {"stat": "OK", "response": {"txid": "mock-txid-001"}}
+        else:
+            resp = {"stat": "FAIL", "message": "Unknown endpoint"}
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(resp).encode())
+
+    def do_GET(self):
+        if '/auth/v2/auth_status' in self.path:
+            resp = {"stat": "OK", "response": {"result": "allow", "status": "allow", "status_msg": "Success"}}
+        else:
+            resp = {"stat": "FAIL", "message": "Unknown endpoint"}
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(resp).encode())
+
+    def log_message(self, format, *args):
+        pass  # Suppress request logging
+
+server = http.server.HTTPServer(('127.0.0.1', int(sys.argv[1])), DuoMockHandler)
+server.serve_forever()
+MOCK_EOF
+
+    python3 "$MOCK_DUO_SCRIPT" $MOCK_DUO_PORT &
+    MOCK_DUO_PID=$!
+    sleep 1
+
+    # Write Duo config pointing to mock server
+    mkdir -p /etc/bellwether
+    cat > /etc/bellwether/duo.conf <<DUO_CONF_EOF
+[duo]
+ikey = DITEST1234567890ABCD
+skey = testsecretkey1234567890abcdefghijklmnop
+host = 127.0.0.1:${MOCK_DUO_PORT}
+failmode = secure
+DUO_CONF_EOF
+    chmod 600 /etc/bellwether/duo.conf
+
+    # Switch PAM to combined module
+    cat > /etc/pam.d/sshd <<PAM_COMBINED_EOF
+auth     required   pam_permit.so
+account  required   pam_permit.so
+password required   pam_permit.so
+session  [success=ok session_err=die default=ignore]  pam_bellwether.so timeout=5 debug duo_config=/etc/bellwether/duo.conf
+session  required   pam_permit.so
+PAM_COMBINED_EOF
+
+    systemctl restart sshd
+    sleep 1
+
+    # --- C1: Combined module symbols ---
+    echo "--- C1: Combined module symbols ---"
+    symbols=$(nm -D /usr/lib64/security/pam_bellwether.so 2>/dev/null || true)
+    for sym in pam_sm_authenticate pam_sm_setcred pam_sm_open_session pam_sm_close_session; do
+        if echo "$symbols" | grep -q "$sym"; then
+            pass "pam_bellwether.so exports $sym"
+        else
+            fail "pam_bellwether.so missing $sym"
+        fi
+    done
+    echo ""
+
+    # --- C2: Cache miss with mock Duo ---
+    echo "--- C2: Cache miss with mock Duo ---"
+    rm -f /run/pam-bellwether/testuser_*.token /run/pam-bellwether/testuser_*.lock
+
+    RESULT=$(ssh_noninteractive whoami 2>&1) || true
+    if [[ "$RESULT" == *"testuser"* ]]; then
+        pass "C2: combined module SSH succeeded (cache miss, mock Duo approved)"
+    else
+        fail "C2: combined module SSH failed (output: $RESULT)"
+    fi
+
+    TOKEN_FILE=/run/pam-bellwether/testuser_127.0.0.1.token
+    if [[ -f "$TOKEN_FILE" ]]; then
+        pass "C2: token file created"
+    else
+        fail "C2: token file not found"
+    fi
+    echo ""
+
+    # --- C3: Cache hit ---
+    echo "--- C3: Cache hit with combined module ---"
+    RESULT=$(ssh_noninteractive whoami 2>&1) || true
+    if [[ "$RESULT" == *"testuser"* ]]; then
+        pass "C3: combined module cache hit succeeded"
+    else
+        fail "C3: combined module cache hit failed (output: $RESULT)"
+    fi
+    echo ""
+
+    # --- C4: Cache expiry ---
+    echo "--- C4: Cache expiry with combined module ---"
+    echo "  Sleeping 6 seconds..."
+    sleep 6
+    rm -f /run/pam-bellwether/testuser_*.token  # force miss
+    RESULT=$(ssh_noninteractive whoami 2>&1) || true
+    if [[ "$RESULT" == *"testuser"* ]]; then
+        pass "C4: combined module post-expiry succeeded"
+    else
+        fail "C4: combined module post-expiry failed (output: $RESULT)"
+    fi
+    echo ""
+
+    # Cleanup mock server
+    kill $MOCK_DUO_PID 2>/dev/null || true
+    rm -f "$MOCK_DUO_SCRIPT"
+    rm -rf /etc/bellwether
+
+    # Restore the gate+stamp PAM config for remaining tests
+    cat > /etc/pam.d/sshd <<PAM_RESTORE_EOF
+auth     required   pam_permit.so
+account  required   pam_permit.so
+password required   pam_permit.so
+session  [success=1 ignore=ignore session_err=die default=ignore]  pam_bellwether_gate.so timeout=5 debug
+session  requisite  pam_exec.so ${MFA_STUB}
+session  required   pam_bellwether_stamp.so debug
+session  required   pam_permit.so
+PAM_RESTORE_EOF
+    systemctl restart sshd
+    sleep 1
+fi
+
+echo ""
+
+# ===========================================================================
 # Phase 3: Real pam_duo tests (optional, requires human interaction)
 # ===========================================================================
 if [[ "$RUN_PHASE3" == "true" ]]; then
@@ -573,14 +731,16 @@ if [[ "$RUN_PHASE3" == "true" ]]; then
             chmod 600 /home/l-aprice/.ssh/authorized_keys
         fi
 
-        # Write Duo config
+        # Write Duo config - failmode=secure so a Duo API failure denies
+        # access instead of silently passing. This ensures tests actually
+        # exercise the Duo push flow.
         mkdir -p /etc/duo
         cat > /etc/duo/pam_duo.conf <<'DUO_EOF'
 [duo]
 ikey = REDACTED_DUO_IKEY
 skey = REDACTED_DUO_SKEY
 host = REDACTED_DUO_HOST
-failmode = safe
+failmode = secure
 pushinfo = yes
 autopush = yes
 DUO_EOF
@@ -600,6 +760,9 @@ PAM_DUO_EOF
         systemctl restart sshd
         sleep 1
 
+        # Clean any l-aprice tokens from previous runs
+        rm -f /run/pam-bellwether/l-aprice_*.token /run/pam-bellwether/l-aprice_*.lock
+
         ssh_duo() {
             ssh -o BatchMode=yes \
                 -o StrictHostKeyChecking=no \
@@ -611,6 +774,37 @@ PAM_DUO_EOF
                 l-aprice@127.0.0.1 "$@"
         }
 
+        # Collect logs from all sources pam_duo and sshd write to.
+        #
+        # Sources checked:
+        #   - journalctl (systemd journal: sshd, pam_bellwether)
+        #   - /var/log/secure (RHEL auth log: sshd PAM entries)
+        #   - /var/log/messages (pam_duo/login_duo log here by default)
+        #
+        # Uses a line-count snapshot to get only lines added after the
+        # snapshot was taken, avoiding syslog timestamp parsing issues.
+        DUO_MARKER=$(mktemp /tmp/duo-test-marker.XXXXXX)
+        DUO_SECURE_LINES=0
+        DUO_MESSAGES_LINES=0
+
+        duo_snapshot() {
+            # Record current line counts and timestamp
+            touch "$DUO_MARKER"
+            DUO_SECURE_LINES=$(wc -l < /var/log/secure 2>/dev/null || echo 0)
+            DUO_MESSAGES_LINES=$(wc -l < /var/log/messages 2>/dev/null || echo 0)
+        }
+
+        duo_logs() {
+            local since_iso
+            since_iso=$(date -r "$DUO_MARKER" --iso-8601=seconds 2>/dev/null)
+            local filter="duo\|pam_bellwether\|l-aprice\|sshd.*session\|SIGSEGV\|segfault"
+            {
+                journalctl --since "$since_iso" --no-pager 2>/dev/null || true
+                tail -n +"$((DUO_SECURE_LINES + 1))" /var/log/secure 2>/dev/null || true
+                tail -n +"$((DUO_MESSAGES_LINES + 1))" /var/log/messages 2>/dev/null || true
+            } | grep -i "$filter" | sort -u
+        }
+
         # --- D1: pam_duo viability ---
         echo "--- D1: pam_duo viability ---"
         echo ""
@@ -619,17 +813,22 @@ PAM_DUO_EOF
 
         rm -f /run/pam-bellwether/l-aprice_*.token /run/pam-bellwether/l-aprice_*.lock
 
-        T_D1=$(date --iso-8601=seconds)
+        duo_snapshot
         sleep 1
 
         DUO_RESULT=$(ssh_duo whoami 2>&1) || true
 
+        sleep 2
+        D1_LOGS=$(duo_logs)
+
+        echo "  --- D1 logs ---"
+        echo "$D1_LOGS" | sed 's/^/  | /'
+        echo "  --- end logs ---"
+        echo ""
+
         # Check for sshd crash
-        sleep 1
-        CRASH_CHECK=$(journalctl -u sshd --since "$T_D1" 2>/dev/null | grep -i "SIGSEGV\|segfault\|core.dump" || true)
-        if [[ -n "$CRASH_CHECK" ]]; then
+        if echo "$D1_LOGS" | grep -qi "SIGSEGV\|segfault\|core.dump"; then
             fail "D1: sshd crashed (SIGSEGV) - pam_duo not viable in session phase"
-            echo "  Crash log: $CRASH_CHECK"
         else
             pass "D1: no sshd crash"
         fi
@@ -638,6 +837,13 @@ PAM_DUO_EOF
             pass "D1: pam_duo connection succeeded in session phase"
         else
             fail "D1: pam_duo connection failed (output: $DUO_RESULT)"
+        fi
+
+        # Verify Duo actually ran (not failmode pass-through)
+        if echo "$D1_LOGS" | grep -qi "duo.*auth\|Successful Duo\|duo_login"; then
+            pass "D1: Duo authentication logged"
+        else
+            warn "D1: no Duo authentication log entry found - Duo may not have actually run"
         fi
 
         echo ""
@@ -650,10 +856,18 @@ PAM_DUO_EOF
 
         rm -f /run/pam-bellwether/l-aprice_*.token /run/pam-bellwether/l-aprice_*.lock
 
-        T_D2=$(date --iso-8601=seconds)
+        duo_snapshot
         sleep 1
 
         DUO_RESULT2=$(ssh_duo whoami 2>&1) || true
+
+        sleep 2
+        D2_LOGS=$(duo_logs)
+
+        echo "  --- D2 logs ---"
+        echo "$D2_LOGS" | sed 's/^/  | /'
+        echo "  --- end logs ---"
+        echo ""
 
         if [[ "$DUO_RESULT2" == *"l-aprice"* ]]; then
             pass "D2: connection succeeded"
@@ -668,12 +882,16 @@ PAM_DUO_EOF
             fail "D2: token file not found"
         fi
 
-        sleep 1
-        JOURNAL_D2=$(journalctl --since "$T_D2" 2>/dev/null | grep -i "pam_bellwether" || true)
-        if echo "$JOURNAL_D2" | grep -qi "cache.miss\|miss"; then
-            pass "D2: syslog shows cache miss"
+        if echo "$D2_LOGS" | grep -qi "cache.miss\|miss"; then
+            pass "D2: bellwether cache miss"
         else
             warn "D2: could not confirm cache-miss log entry"
+        fi
+
+        if echo "$D2_LOGS" | grep -qi "duo.*auth\|Successful Duo\|duo_login"; then
+            pass "D2: Duo authentication logged"
+        else
+            warn "D2: no Duo authentication log entry found"
         fi
 
         echo ""
@@ -683,10 +901,18 @@ PAM_DUO_EOF
         echo "  (NO Duo push should fire - do NOT approve anything)"
         echo ""
 
-        T_D3=$(date --iso-8601=seconds)
+        duo_snapshot
         sleep 1
 
         DUO_RESULT3=$(ssh_duo whoami 2>&1) || true
+
+        sleep 2
+        D3_LOGS=$(duo_logs)
+
+        echo "  --- D3 logs ---"
+        echo "$D3_LOGS" | sed 's/^/  | /'
+        echo "  --- end logs ---"
+        echo ""
 
         if [[ "$DUO_RESULT3" == *"l-aprice"* ]]; then
             pass "D3: connection succeeded (cache hit)"
@@ -694,12 +920,17 @@ PAM_DUO_EOF
             fail "D3: connection failed (output: $DUO_RESULT3)"
         fi
 
-        sleep 1
-        JOURNAL_D3=$(journalctl --since "$T_D3" 2>/dev/null | grep -i "pam_bellwether" || true)
-        if echo "$JOURNAL_D3" | grep -qi "cache.hit\|hit.*skipping"; then
-            pass "D3: syslog shows cache hit (Duo skipped)"
+        if echo "$D3_LOGS" | grep -qi "cache.hit\|hit.*skipping"; then
+            pass "D3: bellwether cache hit (Duo skipped)"
         else
             warn "D3: could not confirm cache-hit log entry"
+        fi
+
+        # Duo should NOT have been invoked on cache hit
+        if echo "$D3_LOGS" | grep -qi "duo.*auth\|Successful Duo\|duo_login"; then
+            fail "D3: Duo authentication logged on cache hit (should have been skipped)"
+        else
+            pass "D3: no Duo authentication on cache hit (correctly skipped)"
         fi
 
         echo ""
