@@ -1,0 +1,21 @@
+[package]
+name = "pam-bellwether"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pam-bellwether-common = { path = "../common" }
+libc = "0.2"
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+hmac = "0.12"
+sha1 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3"

@@ -39,6 +39,20 @@ Key invariants:
 - TTL is configurable via PAM arg `timeout=N` (default 60s)
 - Failed MFA triggers a 2-second penalty delay before releasing the lock
 
+## Git
+
+This is a public repository. Do not push to origin or create pull requests without explicit permission. Commit locally on branches as usual, but treat pushing as a manual step the user controls.
+
 ## Canonical Spec
 
 `SPEC.md` is the single source of truth for design decisions, security model, and PAM stack integration. Read it before making architectural changes.
+
+## Testing
+
+Three tiers. Each catches different classes of bugs.
+
+1. **`cargo test`** - Logic: signing, config parsing, error classification, the Duo authenticate orchestrator (in-process mock HTTP server). Runs anywhere, fast.
+2. **Lima VM with mock services** - Integration: PAM lifecycle, sshd behavior, flock serialization, token caching. Automated, no human. `limactl shell bastion-test -- sudo bash tests/integration/pam_session_test.sh`
+3. **Lima VM with real Duo** - API compatibility: actual HMAC signing against Duo servers, real push delivery. Human approves pushes. `--phase3` flag.
+
+Most iteration happens at Tiers 1 and 2. Tier 3 is a final validation.

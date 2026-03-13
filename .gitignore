@@ -2,3 +2,4 @@
 **/*.rs.bk
 .vagrant/
 demo/.env
+tests/integration/.env
